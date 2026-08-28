@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0e6b4a">
+<meta name="theme-color" content="#f7f6f0">
 <title>Pairfolio</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Gothic+A1:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Gothic+A1:wght@400;500;700;800&family=Nanum+Myeongjo:wght@700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -43,6 +43,7 @@
 
   <!-- 입력 -->
   <main id="tab-add" class="tab">
+    <p class="field-label">오늘 쓴 돈</p>
     <div class="amount-row">
       <input id="add-amount" type="text" inputmode="decimal" placeholder="0" autocomplete="off">
       <button id="add-currency" class="chip-btn" type="button">EUR</button>
@@ -55,7 +56,7 @@
     </div>
     <input id="add-memo" type="text" placeholder="메모 (선택)" autocomplete="off">
     <p id="add-trip-note" class="fx-note" hidden></p>
-    <button id="add-save" class="btn-primary big">저장</button>
+    <button id="add-save" class="btn-primary big">기입하기<small id="add-save-sub" hidden></small></button>
     <p id="add-msg" class="msg" hidden></p>
   </main>
 

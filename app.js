@@ -64,7 +64,8 @@ async function enterApp(session) {
   }
   me = m;
   $("screen-auth").hidden = true; $("app").hidden = false;
-  $("me-chip").textContent = m.display_name + " (" + m.member_code + ")";
+  $("me-chip").textContent = m.display_name;
+  $("me-chip").classList.add(m.member_code.toLowerCase());
   await loadRefs();
   initAddForm();
   renderList();
@@ -97,7 +98,9 @@ function initAddForm() {
   $("add-date").value = todayStr();
   renderCatGrid();
   renderWhoSeg();
+  updateSaveButton();
   updateTripNote();
+  $("add-amount").addEventListener("input", updateSaveButton);
 }
 function activeCats() {
   return cats.filter((c) => !c.archived && c.kind === "expense")
@@ -110,19 +113,35 @@ function renderCatGrid() {
     b.type = "button";
     b.textContent = c.name + (c.kind === "income" ? " ↘" : "");
     b.className = addState.catId === c.id ? "on" : "";
-    b.onclick = () => { addState.catId = c.id; renderCatGrid(); };
+    b.onclick = () => { addState.catId = c.id; renderCatGrid(); updateSaveButton(); };
     g.appendChild(b);
   }
 }
+const WHO_NAME = { KM: "규문", MK: "민경" };
 function renderWhoSeg() {
   const s = $("add-who"); s.innerHTML = "";
   for (const code of ["KM", "MK"]) {
     const b = document.createElement("button");
-    b.type = "button"; b.textContent = code;
+    b.type = "button";
+    b.innerHTML = `<span class="nib"></span>${WHO_NAME[code]}`;
     b.className = (addState.who === code ? "on " : "") + code.toLowerCase();
-    b.onclick = () => { addState.who = code; renderWhoSeg(); };
+    b.onclick = () => { addState.who = code; renderWhoSeg(); updateSaveButton(); };
     s.appendChild(b);
   }
+}
+// 결제자 색 반응 (저장 버튼이 그 사람의 펜 색이 된다)
+function updateSaveButton() {
+  const btn = $("add-save");
+  btn.classList.remove("km", "mk");
+  btn.classList.add(addState.who.toLowerCase());
+  const sub = $("add-save-sub");
+  const cat = cats.find((c) => c.id === addState.catId);
+  const raw = parseFloat($("add-amount").value.replace(/,/g, "."));
+  const parts = [WHO_NAME[addState.who]];
+  if (cat) parts.push(cat.name);
+  if (raw > 0) parts.push(raw.toLocaleString("de-AT", { minimumFractionDigits: 2 }) + (addState.currency === "KRW" ? " ₩" : " €"));
+  sub.textContent = parts.join(" · ");
+  sub.hidden = parts.length < 2;
 }
 $("add-currency").addEventListener("click", () => {
   addState.currency = addState.currency === "EUR" ? "KRW" : "EUR";
@@ -131,6 +150,7 @@ $("add-currency").addEventListener("click", () => {
   b.classList.toggle("krw", addState.currency === "KRW");
   $("add-fx-note").hidden = addState.currency !== "KRW";
   if (addState.currency === "KRW") $("add-fx-note").textContent = "원화 입력 — 저장 시 ECB 환율로 자동 환산";
+  updateSaveButton();
 });
 $("add-date").addEventListener("change", updateTripNote);
 
@@ -204,7 +224,7 @@ function showAddMsg(text, bad = false) {
 }
 function resetAddForm() {
   $("add-amount").value = ""; $("add-memo").value = "";
-  addState.catId = null; renderCatGrid();
+  addState.catId = null; renderCatGrid(); updateSaveButton();
   $("add-amount").focus();
 }
 async function insertTx(tx) {
@@ -259,7 +279,8 @@ function monthRange(ym) {
 
 async function renderList() {
   if ($("tab-list").hidden && $("mo-label").textContent) { /* 백그라운드 갱신 허용 */ }
-  $("mo-label").textContent = listMonth.replace("-", "년 ") + "월";
+  const [ly, lm] = listMonth.split("-");
+  $("mo-label").textContent = `${ly}년 ${Number(lm)}월`;
   const [from, to] = monthRange(listMonth);
   const { data, error } = await sb.from("transactions")
     .select("*").is("deleted_at", null)
@@ -267,13 +288,22 @@ async function renderList() {
     .order("tx_date", { ascending: false }).order("created_at", { ascending: false });
   if (error) { $("tx-list").innerHTML = `<p class="empty">불러오기 실패</p>`; return; }
 
-  let spend = 0, income = 0;
+  let spend = 0, income = 0, spendKm = 0, spendMk = 0;
   for (const t of data) {
-    if (t.tx_type === "expense") spend += Number(t.amount_eur);
+    if (t.tx_type === "expense") {
+      spend += Number(t.amount_eur);
+      if (t.paid_by === "KM") spendKm += Number(t.amount_eur); else spendMk += Number(t.amount_eur);
+    }
     if (t.tx_type === "income") income += Number(t.amount_eur);
   }
+  let splitHtml = "";
+  if (spend > 0) {
+    const pk = Math.round((spendKm / spend) * 100);
+    splitHtml = `<div class="split-bar"><i class="k" style="width:${pk}%"></i><i class="m" style="width:${100 - pk}%"></i></div>
+      <div class="split-lbl"><span class="k">규문 ${fmtEur(spendKm)}</span><span class="m">민경 ${fmtEur(spendMk)}</span></div>`;
+  }
   $("mo-summary").innerHTML =
-    `<span>지출 <b>${fmtEur(spend)}</b></span><span>수입 <b>${fmtEur(income)}</b></span>`;
+    `<div class="mo-totals"><span>지출 <b>${fmtEur(spend)}</b></span><span>수입 <b>${fmtEur(income)}</b></span></div>` + splitHtml;
 
   const list = $("tx-list"); list.innerHTML = "";
   if (!data.length) { list.innerHTML = `<p class="empty">이 달 기록이 없습니다</p>`; return; }
@@ -292,13 +322,12 @@ async function renderList() {
 function catName(id) { return cats.find((c) => c.id === id)?.name ?? "—"; }
 function txRow(t, inTrash = false) {
   const b = document.createElement("button");
-  b.className = "tx-row"; b.type = "button";
+  b.className = "tx-row " + t.paid_by.toLowerCase(); b.type = "button";
   const income = t.tx_type === "income";
   b.innerHTML =
     `<span class="cat">${esc(catName(t.category_id))}</span>` +
     `<span class="memo">${esc(t.memo)}</span>` +
-    `<span class="who ${t.paid_by.toLowerCase()}">${t.paid_by}</span>` +
-    `<span class="amt ${income ? "income" : ""}">${income ? "+" : ""}${fmtEur(t.amount_eur)}</span>`;
+    `<span class="amt ${income ? "income" : ""}">${fmtEur(t.amount_eur)}</span>`;
   b.onclick = () => (inTrash ? openTrashItem(t) : openEditTx(t));
   return b;
 }
@@ -317,7 +346,7 @@ function openEditTx(t) {
     <label>카테고리<select id="e-cat">${catOpts}</select></label>
     <label>메모<input type="text" id="e-memo" value="${esc(t.memo)}"></label>
     <div class="row-2">
-      <label>귀속<select id="e-who">
+      <label>결제<select id="e-who">
         <option value="KM" ${t.paid_by === "KM" ? "selected" : ""}>KM</option>
         <option value="MK" ${t.paid_by === "MK" ? "selected" : ""}>MK</option>
       </select></label>
@@ -420,7 +449,7 @@ function openRuleForm(r) {
     </div>
     <div class="row-2">
       <label>카테고리<select id="r-cat">${catOpts}</select></label>
-      <label>귀속<select id="r-who">
+      <label>결제<select id="r-who">
         <option value="KM" ${r.paid_by === "KM" ? "selected" : ""}>KM</option>
         <option value="MK" ${r.paid_by === "MK" ? "selected" : ""}>MK</option>
       </select></label>
