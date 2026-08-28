@@ -413,7 +413,7 @@ function renderRules() {
     const b = document.createElement("button");
     b.className = "card-row" + (r.status !== "active" ? " paused" : "");
     b.type = "button";
-    const cad = { monthly: "매월", bimonthly: "격월", yearly: "매년" }[r.cadence];
+    const cad = { monthly: "매월", bimonthly: "격월", semiannual: "반년", yearly: "매년" }[r.cadence];
     const st = { active: "", paused: " · 일시중지", ended: " · 종료" }[r.status];
     b.innerHTML = `<span class="name">${esc(r.name)}</span>
       <span class="sub">${cad} ${r.day_of_month}일 · ${fmtEur(r.amount_eur)}${st}</span>`;
@@ -443,6 +443,7 @@ function openRuleForm(r) {
       <label>주기<select id="r-cad">
         <option value="monthly" ${r.cadence === "monthly" ? "selected" : ""}>매월</option>
         <option value="bimonthly" ${r.cadence === "bimonthly" ? "selected" : ""}>격월</option>
+        <option value="semiannual" ${r.cadence === "semiannual" ? "selected" : ""}>반년</option>
         <option value="yearly" ${r.cadence === "yearly" ? "selected" : ""}>매년</option>
       </select></label>
       <label>시작일<input id="r-start" type="date" value="${r.start_date}"></label>
@@ -480,7 +481,8 @@ function openRuleForm(r) {
       paid_by: $("r-who").value,
       memo_template: $("r-memo").value.trim(),
       status: $("r-status").value,
-      tx_type: cats.find((c) => c.id === $("r-cat").value)?.kind === "income" ? "income" : "expense",
+      tx_type: cats.find((c) => c.id === $("r-cat").value)?.kind === "income" ? "income"
+        : (!isNew && r.tx_type === "transfer") ? "transfer" : "expense",
     };
     if (!row.name || !row.amount_eur || !row.day_of_month) return toast("이름·금액·결제일은 필수예요");
     const q = isNew ? sb.from("recurring_rules").insert(row)
