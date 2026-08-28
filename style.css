@@ -185,6 +185,28 @@ h2 { font-size: .92rem; font-weight: 800; margin: 24px 0 8px; }
 .trash-link { display: block; margin: 18px auto 0; }
 .empty { text-align: center; color: var(--ink-2); font-size: .85rem; padding: 32px 0; }
 
+/* ── 분석 ── */
+.an-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 4px; }
+.an-tile { background: var(--card); border: 1px solid var(--card-line); border-radius: 12px; padding: 12px 10px; text-align: center; }
+.an-tile .t { font-size: .66rem; font-weight: 800; letter-spacing: .06em; color: var(--ink-2); }
+.an-tile .v { font-size: .95rem; font-weight: 800; margin-top: 4px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.an-tile .v.in { color: #0e6b4a; }
+.an-sec { font-size: .74rem; font-weight: 800; letter-spacing: .06em; color: var(--ink-2); margin: 22px 2px 8px; }
+.an-note { font-size: .68rem; color: var(--ink-2); margin: 6px 2px 0; }
+.cat-bars { background: var(--card); border: 1px solid var(--card-line); border-radius: 12px; padding: 12px 14px; }
+.cbar { display: grid; grid-template-columns: 76px 1fr auto; align-items: center; gap: 8px; padding: 6px 0; }
+.cbar .n { font-size: .76rem; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cbar .track { height: 14px; border-radius: 0 4px 4px 0; background: #b0a884; min-width: 2px; }
+.cbar .val { font-size: .76rem; font-weight: 800; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.cbar .val small { display: block; font-size: .62rem; font-weight: 700; color: var(--ink-2); }
+.an-split { background: var(--card); border: 1px solid var(--card-line); border-radius: 12px; padding: 14px; }
+.an-split .bar { display: flex; height: 14px; border-radius: 4px; overflow: hidden; background: var(--grid-strong); }
+.an-split .bar i { height: 100%; }
+.an-split .bar .k { background: var(--km); border-right: 2px solid var(--card); }
+.an-split .bar .m { background: var(--mk); }
+.an-split .lbl { display: flex; justify-content: space-between; font-size: .74rem; font-weight: 800; margin-top: 8px; font-variant-numeric: tabular-nums; }
+.an-split .lbl .k { color: var(--km); } .an-split .lbl .m { color: var(--mk); }
+
 /* ── 월 점프 피커 ── */
 .pk-years { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 10px; }
 .pk-years button {

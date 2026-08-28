@@ -301,12 +301,13 @@ window.addEventListener("online", flushQueue);
 const MIN_YM = "2018-10";
 $("mo-prev").addEventListener("click", () => shiftMonth(-1));
 $("mo-next").addEventListener("click", () => shiftMonth(1));
-$("mo-label").addEventListener("click", openMonthPicker);
+$("mo-label").addEventListener("click", () =>
+  openMonthPicker(listMonth, (ym) => { listMonth = ym; renderList(); }));
 
-function openMonthPicker() {
+function openMonthPicker(current, onPick) {
   openModal(`<h3>달 선택</h3><div class="pk-years" id="pk-years"></div><div class="pk-mos" id="pk-mos"></div>`);
   const nowYm = todayStr().slice(0, 7);
-  let selY = Number(listMonth.slice(0, 4));
+  let selY = Number(current.slice(0, 4));
   const renderMos = () => {
     const w = $("pk-mos"); w.innerHTML = "";
     for (let m = 1; m <= 12; m++) {
@@ -314,8 +315,8 @@ function openMonthPicker() {
       const b = document.createElement("button");
       b.type = "button"; b.textContent = m + "월";
       b.disabled = ym < MIN_YM || ym > nowYm;
-      b.className = ym === listMonth ? "on" : "";
-      b.onclick = () => { listMonth = ym; closeModal(); renderList(); };
+      b.className = ym === current ? "on" : "";
+      b.onclick = () => { closeModal(); onPick(ym); };
       w.appendChild(b);
     }
   };
@@ -472,7 +473,104 @@ function openTrashItem(t) {
   };
 }
 
-// ─────────────────────────────────────────── 반복 탭
+// ─────────────────────────────────────────── 분석 탭
+let anMonth = todayStr().slice(0, 7);
+$("an-prev").addEventListener("click", () => shiftAnMonth(-1));
+$("an-next").addEventListener("click", () => shiftAnMonth(1));
+$("an-label").addEventListener("click", () =>
+  openMonthPicker(anMonth, (ym) => { anMonth = ym; renderStats(); }));
+function shiftAnMonth(d) {
+  const [y, m] = anMonth.split("-").map(Number);
+  anMonth = new Date(y, m - 1 + d, 1).toLocaleDateString("sv-SE").slice(0, 7);
+  renderStats();
+}
+
+async function renderStats() {
+  const [ly, lm] = anMonth.split("-");
+  $("an-label").innerHTML = `${ly}년 ${Number(lm)}월 <span class="car">▾</span>`;
+  const [from, to] = monthRange(anMonth);
+  // 비교 기간: 직전 3개월
+  const pFrom = new Date(Number(ly), Number(lm) - 1 - 3, 1).toLocaleDateString("sv-SE");
+  const pTo = new Date(Number(ly), Number(lm) - 1, 0).toLocaleDateString("sv-SE");
+
+  const sel = "tx_type, category_id, paid_by, amount_eur";
+  const [cur, prev] = await Promise.all([
+    sb.from("transactions").select(sel).is("deleted_at", null).gte("tx_date", from).lte("tx_date", to),
+    sb.from("transactions").select(sel).is("deleted_at", null).gte("tx_date", pFrom).lte("tx_date", pTo),
+  ]);
+  if (cur.error) { $("an-body").innerHTML = `<p class="empty">불러오기 실패</p>`; return; }
+
+  let spend = 0, income = 0, spendKm = 0, spendMk = 0;
+  const catSum = {};
+  for (const t of cur.data) {
+    const a = Number(t.amount_eur);
+    if (t.tx_type === "expense") {
+      spend += a;
+      catSum[t.category_id] = (catSum[t.category_id] ?? 0) + a;
+      if (t.paid_by === "KM") spendKm += a; else spendMk += a;
+    } else if (t.tx_type === "income") income += a;
+  }
+  const prevAvg = {};
+  let prevSpend = 0;
+  for (const t of prev.data ?? []) {
+    if (t.tx_type !== "expense") continue;
+    prevAvg[t.category_id] = (prevAvg[t.category_id] ?? 0) + Number(t.amount_eur);
+    prevSpend += Number(t.amount_eur);
+  }
+  for (const k in prevAvg) prevAvg[k] /= 3;
+  prevSpend /= 3;
+
+  const rate = income > 0 ? Math.round(((income - spend) / income) * 100) : null;
+  const rows = Object.entries(catSum).sort((a, b) => b[1] - a[1]).slice(0, 12);
+  const maxV = rows.length ? rows[0][1] : 1;
+
+  const deltaTxt = (curV, avgV) => {
+    if (!avgV) return "신규";
+    const p = Math.round(((curV - avgV) / avgV) * 100);
+    if (p === 0) return "평균 수준";
+    return (p > 0 ? "+" : "−") + Math.abs(p) + "%";
+  };
+
+  // 구독·자동이체 월 환산 (지출 규칙만)
+  const CAD_DIV = { monthly: 1, bimonthly: 2, semiannual: 6, yearly: 12 };
+  const subRules = rules.filter((r) => r.status === "active" && r.tx_type === "expense");
+  const subTotal = subRules.reduce((s, r) => s + Number(r.amount_eur) / CAD_DIV[r.cadence], 0);
+
+  const pk = spend > 0 ? Math.round((spendKm / spend) * 100) : 50;
+  const totalDelta = deltaTxt(spend, prevSpend);
+
+  $("an-body").innerHTML = `
+    <div class="an-tiles">
+      <div class="an-tile"><p class="t">지출 €</p><p class="v">${fmtNum(spend)}</p></div>
+      <div class="an-tile"><p class="t">수입 €</p><p class="v in">${fmtNum(income)}</p></div>
+      <div class="an-tile"><p class="t">저축률</p><p class="v">${rate === null ? "—" : rate + "%"}</p></div>
+    </div>
+    <p class="an-note">지출은 소비만 — 대출 상환(이전)·투자 이체는 제외. 지출 3개월 평균 대비 ${totalDelta}</p>
+
+    <p class="an-sec">카테고리별 지출 · 직전 3개월 평균 대비</p>
+    <div class="cat-bars">
+      ${rows.length ? rows.map(([cid, v]) => `
+        <div class="cbar">
+          <span class="n">${esc(catName(cid))}</span>
+          <span class="track" style="width:${Math.max(2, Math.round((v / maxV) * 100))}%"></span>
+          <span class="val">${fmtNum(v)}<small>${deltaTxt(v, prevAvg[cid])}</small></span>
+        </div>`).join("") : `<p class="empty">이 달 지출이 없습니다</p>`}
+    </div>
+
+    <p class="an-sec">누가 결제했나</p>
+    <div class="an-split">
+      <div class="bar"><i class="k" style="width:${pk}%"></i><i class="m" style="width:${100 - pk}%"></i></div>
+      <div class="lbl"><span class="k">규문 ${fmtNum(spendKm)} € (${pk}%)</span><span class="m">민경 ${fmtNum(spendMk)} € (${100 - pk}%)</span></div>
+    </div>
+
+    <p class="an-sec">구독·자동이체 (월 환산)</p>
+    <div class="an-tiles" style="grid-template-columns: 1fr 1fr">
+      <div class="an-tile"><p class="t">월 환산 합계</p><p class="v">${fmtNum(subTotal)} €</p></div>
+      <div class="an-tile"><p class="t">활성 규칙</p><p class="v">${subRules.length}건</p></div>
+    </div>`;
+}
+
+// ─────────────────────────────────────────── 반복 규칙 (더보기)
 function renderRules() {
   const wrap = $("rule-list"); wrap.innerHTML = "";
   if (!rules.length) { wrap.innerHTML = `<p class="empty">반복 규칙이 없습니다</p>`; return; }
@@ -651,10 +749,10 @@ function downloadFile(name, content, type) {
 document.querySelectorAll("#tabbar button").forEach((b) => {
   b.addEventListener("click", () => {
     document.querySelectorAll("#tabbar button").forEach((x) => x.classList.toggle("on", x === b));
-    for (const t of ["add", "list", "rules", "more"]) $("tab-" + t).hidden = t !== b.dataset.tab;
+    for (const t of ["add", "list", "stats", "more"]) $("tab-" + t).hidden = t !== b.dataset.tab;
     if (b.dataset.tab === "list") renderList();
-    if (b.dataset.tab === "rules") loadRefs().then(renderRules);
-    if (b.dataset.tab === "more") loadRefs().then(renderMore);
+    if (b.dataset.tab === "stats") loadRefs().then(renderStats);
+    if (b.dataset.tab === "more") loadRefs().then(() => { renderRules(); renderMore(); });
   });
 });
 

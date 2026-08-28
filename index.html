@@ -72,17 +72,23 @@
     <button id="open-trash" class="btn-ghost trash-link">휴지통 보기</button>
   </main>
 
-  <!-- 반복 -->
-  <main id="tab-rules" class="tab" hidden>
+  <!-- 분석 -->
+  <main id="tab-stats" class="tab" hidden>
+    <div class="month-nav">
+      <button id="an-prev" class="mo-arrow" aria-label="이전 달">&#9664;</button>
+      <button id="an-label" aria-label="달 선택"></button>
+      <button id="an-next" class="mo-arrow" aria-label="다음 달">&#9654;</button>
+    </div>
+    <div id="an-body"></div>
+  </main>
+
+  <!-- 더보기 -->
+  <main id="tab-more" class="tab" hidden>
     <div class="section-head">
       <h2>반복 규칙</h2>
       <button id="rule-new" class="btn-ghost">+ 추가</button>
     </div>
     <div id="rule-list"></div>
-  </main>
-
-  <!-- 더보기 -->
-  <main id="tab-more" class="tab" hidden>
     <h2>여행</h2>
     <div id="trip-list"></div>
     <button id="trip-new" class="btn-ghost">+ 여행 추가</button>
@@ -108,9 +114,9 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
       <span>내역</span>
     </button>
-    <button data-tab="rules" aria-label="반복">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>
-      <span>반복</span>
+    <button data-tab="stats" aria-label="분석">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M7 16h4"/><path d="M7 11h8"/><path d="M7 6h12"/></svg>
+      <span>분석</span>
     </button>
     <button data-tab="more" aria-label="더보기">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
