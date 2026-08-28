@@ -299,10 +299,10 @@ window.addEventListener("online", flushQueue);
 
 // ─────────────────────────────────────────── 내역 탭
 const MIN_YM = "2018-10";
-$("mo-prev").addEventListener("click", () => shiftMonth(-1));
-$("mo-next").addEventListener("click", () => shiftMonth(1));
+$("mo-prev").addEventListener("click", () => { clearSearch(); shiftMonth(-1); });
+$("mo-next").addEventListener("click", () => { clearSearch(); shiftMonth(1); });
 $("mo-label").addEventListener("click", () =>
-  openMonthPicker(listMonth, (ym) => { listMonth = ym; renderList(); }));
+  openMonthPicker(listMonth, (ym) => { clearSearch(); listMonth = ym; renderList(); }));
 
 function openMonthPicker(current, onPick) {
   openModal(`<h3>달 선택</h3><div class="pk-years" id="pk-years"></div><div class="pk-mos" id="pk-mos"></div>`);
@@ -347,7 +347,64 @@ function monthRange(ym) {
 
 const fmtNum = (n) => Number(n).toLocaleString("de-AT", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+// ── 검색 (전체 기간: 메모·카테고리명·정확 금액) ──
+let searchTimer;
+$("tx-search").addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => { $("tx-search").value.trim() ? runSearch() : renderList(); }, 280);
+});
+function clearSearch() { if ($("tx-search").value) $("tx-search").value = ""; }
+
+async function runSearch() {
+  const q = $("tx-search").value.trim();
+  if (!q) return renderList();
+  const safe = q.replace(/[,()]/g, " ").trim();
+  const ors = [`memo.ilike.%${safe}%`];
+  const catIds = cats.filter((c) => c.name.includes(q)).map((c) => c.id);
+  if (catIds.length) ors.push(`category_id.in.(${catIds.join(",")})`);
+  if (/^[\d.,]+$/.test(q)) {
+    const n = parseFloat(q.replace(",", "."));
+    if (!isNaN(n)) ors.push(`amount_eur.eq.${n}`);
+  }
+  const LIMIT = 150;
+  const { data, error } = await sb.from("transactions")
+    .select("*").is("deleted_at", null)
+    .or(ors.join(","))
+    .order("tx_date", { ascending: false }).limit(LIMIT);
+  if (error) { $("tx-list").innerHTML = `<p class="empty">검색 실패</p>`; return; }
+
+  $("mo-label").innerHTML = `검색 결과`;
+  const list = $("tx-list"); list.innerHTML = "";
+  if (!data.length) {
+    $("mo-summary").innerHTML = "";
+    list.innerHTML = `<p class="empty">"${esc(q)}" 결과 없음</p>`;
+    return;
+  }
+  const spendSum = data.filter((t) => t.tx_type === "expense")
+    .reduce((s, t) => s + Number(t.amount_eur), 0);
+  $("mo-summary").innerHTML =
+    `<p class="search-sum">${data.length}건${data.length === LIMIT ? "+" : ""} · 지출 합계 ${fmtNum(spendSum)} €${data.length === LIMIT ? " (최근 " + LIMIT + "건만 표시)" : ""}</p>`;
+
+  let curYm = "";
+  let sheet = null;
+  for (const t of data) {
+    const ym = t.tx_date.slice(0, 7);
+    if (ym !== curYm) {
+      curYm = ym;
+      const h = document.createElement("p");
+      h.className = "search-head";
+      h.textContent = `${ym.slice(0, 4)}년 ${Number(ym.slice(5, 7))}월`;
+      list.appendChild(h);
+      sheet = document.createElement("div");
+      sheet.className = "sheet";
+      list.appendChild(sheet);
+    }
+    sheet.appendChild(txRow(t));
+  }
+}
+
 async function renderList() {
+  if ($("tx-search").value.trim()) return runSearch();
   const [ly, lm] = listMonth.split("-");
   $("mo-label").innerHTML = `${ly}년 ${Number(lm)}월 <span class="car">▾</span>`;
   const [from, to] = monthRange(listMonth);
