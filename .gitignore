@@ -1,0 +1,4 @@
+# 가계 데이터는 절대 리포에 올리지 않는다
+*.xlsx
+*.csv
+design-mockups.html
