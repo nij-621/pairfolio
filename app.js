@@ -145,11 +145,72 @@ function renderCatGrid() {
     sep.className = "cat-sep"; sep.textContent = "수입";
     g.appendChild(sep);
     inc.forEach((c) => g.appendChild(make(c)));
+    const edit = document.createElement("button");
+    edit.type = "button"; edit.className = "more-btn"; edit.textContent = "카테고리 편집";
+    edit.onclick = openCatManager;
+    g.appendChild(edit);
     const b = document.createElement("button");
     b.type = "button"; b.className = "more-btn"; b.textContent = "접기 ▴";
     b.onclick = () => { addState.showAll = false; if (mustExpand) addState.catId = null; renderCatGrid(); updateSaveButton(); };
     g.appendChild(b);
   }
+}
+
+// ── 카테고리 관리 (삭제 = 보관: 기존 내역은 유지, 그리드에서만 사라짐) ──
+function openCatManager() {
+  openModal(`
+    <h3>카테고리 편집</h3>
+    <div class="row-2">
+      <label style="flex:2">새 카테고리<input id="cm-name" placeholder="이름"></label>
+      <label>종류<select id="cm-kind"><option value="expense">지출</option><option value="income">수입</option></select></label>
+    </div>
+    <button class="btn-primary" id="cm-add" style="margin-top:12px">추가</button>
+    <label style="margin-top:18px">사용 중</label>
+    <div id="cm-active" class="sheet"></div>
+    <label style="margin-top:14px">보관됨</label>
+    <div id="cm-archived" class="sheet"></div>`);
+  const renderLists = () => {
+    const act = $("cm-active"); act.innerHTML = "";
+    for (const c of cats.filter((x) => !x.archived)) {
+      const r = document.createElement("div");
+      r.className = "lrow";
+      r.innerHTML = `<span class="cat">${esc(c.name)}</span><span class="memo">${c.kind === "income" ? "수입" : "지출"}</span>`;
+      const btn = document.createElement("button");
+      btn.type = "button"; btn.className = "btn-ghost danger"; btn.textContent = "보관";
+      btn.onclick = async () => {
+        const { error } = await sb.from("categories").update({ archived: true }).eq("id", c.id);
+        if (error) return toast("실패: " + error.message);
+        if (addState.catId === c.id) addState.catId = null;
+        await loadRefs(); renderLists(); renderCatGrid(); toast(`"${c.name}" 보관됨`);
+      };
+      r.appendChild(btn); act.appendChild(r);
+    }
+    const ar = $("cm-archived");
+    const archived = cats.filter((x) => x.archived);
+    ar.innerHTML = archived.length ? "" : `<p class="empty">없음</p>`;
+    for (const c of archived) {
+      const r = document.createElement("div");
+      r.className = "lrow";
+      r.innerHTML = `<span class="cat">${esc(c.name)}</span><span class="memo">${c.kind === "income" ? "수입" : "지출"}</span>`;
+      const btn = document.createElement("button");
+      btn.type = "button"; btn.className = "btn-ghost"; btn.textContent = "복원";
+      btn.onclick = async () => {
+        const { error } = await sb.from("categories").update({ archived: false }).eq("id", c.id);
+        if (error) return toast("실패: " + error.message);
+        await loadRefs(); renderLists(); renderCatGrid(); toast(`"${c.name}" 복원됨`);
+      };
+      r.appendChild(btn); ar.appendChild(r);
+    }
+  };
+  $("cm-add").onclick = async () => {
+    const name = $("cm-name").value.trim();
+    if (!name) return toast("이름을 입력하세요");
+    const { error } = await sb.from("categories").insert({ name, kind: $("cm-kind").value, sort: 50 });
+    if (error) return toast(/duplicate/.test(error.message) ? "같은 이름이 이미 있어요" : "추가 실패");
+    $("cm-name").value = "";
+    await loadRefs(); renderLists(); renderCatGrid(); toast(`"${name}" 추가됨`);
+  };
+  renderLists();
 }
 const WHO_NAME = { KM: "규문", MK: "민경" };
 function renderWhoSeg() {
@@ -301,6 +362,7 @@ window.addEventListener("online", flushQueue);
 const MIN_YM = "2018-10";
 $("mo-prev").addEventListener("click", () => { clearSearch(); shiftMonth(-1); });
 $("mo-next").addEventListener("click", () => { clearSearch(); shiftMonth(1); });
+$("mo-today").addEventListener("click", () => { clearSearch(); listMonth = todayStr().slice(0, 7); renderList(); });
 $("mo-label").addEventListener("click", () =>
   openMonthPicker(listMonth, (ym) => { clearSearch(); listMonth = ym; renderList(); }));
 
@@ -407,6 +469,7 @@ async function renderList() {
   if ($("tx-search").value.trim()) return runSearch();
   const [ly, lm] = listMonth.split("-");
   $("mo-label").innerHTML = `${ly}년 ${Number(lm)}월 <span class="car">▾</span>`;
+  $("mo-today").hidden = listMonth === todayStr().slice(0, 7);
   const [from, to] = monthRange(listMonth);
   const { data, error } = await sb.from("transactions")
     .select("*").is("deleted_at", null)
@@ -534,6 +597,7 @@ function openTrashItem(t) {
 let anMonth = todayStr().slice(0, 7);
 $("an-prev").addEventListener("click", () => shiftAnMonth(-1));
 $("an-next").addEventListener("click", () => shiftAnMonth(1));
+$("an-today").addEventListener("click", () => { anMonth = todayStr().slice(0, 7); renderStats(); });
 $("an-label").addEventListener("click", () =>
   openMonthPicker(anMonth, (ym) => { anMonth = ym; renderStats(); }));
 function shiftAnMonth(d) {
@@ -545,6 +609,7 @@ function shiftAnMonth(d) {
 async function renderStats() {
   const [ly, lm] = anMonth.split("-");
   $("an-label").innerHTML = `${ly}년 ${Number(lm)}월 <span class="car">▾</span>`;
+  $("an-today").hidden = anMonth === todayStr().slice(0, 7);
   const [from, to] = monthRange(anMonth);
   // 비교 기간: 직전 3개월
   const pFrom = new Date(Number(ly), Number(lm) - 1 - 3, 1).toLocaleDateString("sv-SE");
@@ -687,10 +752,17 @@ function openRuleForm(r) {
     </div>
     <label>메모 형식 ({n} = 회차)<input id="r-memo" value="${esc(r.memo_template)}" placeholder="스픽 프리미엄 플러스({n}회),자동이체"></label>
     <div class="actions">
+      ${isNew ? "" : `<button class="btn-ghost danger" id="r-del">삭제</button>`}
       <button class="btn-ghost" id="r-cancel">취소</button>
       <button class="btn-primary" id="r-save">저장</button>
     </div>`);
   $("r-cancel").onclick = closeModal;
+  if (!isNew) $("r-del").onclick = async () => {
+    if (!confirm(`"${r.name}" 규칙을 삭제할까요?`)) return;
+    const { error } = await sb.from("recurring_rules").delete().eq("id", r.id);
+    if (error) return toast("이미 기록된 거래가 있는 규칙은 삭제할 수 없어요 — 상태를 '종료'로 바꾸세요", 3600);
+    closeModal(); await loadRefs(); renderRules(); toast("삭제됨");
+  };
   $("r-save").onclick = async () => {
     const row = {
       name: $("r-name").value.trim(),
@@ -748,10 +820,17 @@ function openTripForm(t) {
       <label>끝<input id="t-end" type="date" value="${t.end_date}"></label>
     </div>
     <div class="actions">
+      ${isNew ? "" : `<button class="btn-ghost danger" id="t-del">삭제</button>`}
       <button class="btn-ghost" id="t-cancel">취소</button>
       <button class="btn-primary" id="t-save">저장</button>
     </div>`);
   $("t-cancel").onclick = closeModal;
+  if (!isNew) $("t-del").onclick = async () => {
+    if (!confirm(`"${t.name}" 여행을 삭제할까요?`)) return;
+    const { error } = await sb.from("trips").delete().eq("id", t.id);
+    if (error) return toast("이 여행이 태깅된 내역이 있어요 — 해당 내역의 여행을 먼저 해제하세요", 3600);
+    closeModal(); await loadRefs(); renderMore(); updateTripNote(); toast("삭제됨");
+  };
   $("t-save").onclick = async () => {
     const row = { name: $("t-name").value.trim(), start_date: $("t-start").value, end_date: $("t-end").value };
     if (!row.name) return toast("이름을 입력하세요");

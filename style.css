@@ -5,13 +5,13 @@
   --card: #fffdf6;
   --card-line: #e0dcc9;
   --ink: #262620;
-  --ink-2: #8a8676;
+  --ink-2: #726e5e;       /* 보조 텍스트 4.7:1 */
   --hl: #f4d35e;          /* 형광펜 */
   --km: #2b4fa1;          /* 파란펜 */
   --km-soft: #eef1f8;
   --mk: #c2502e;          /* 빨간펜 */
   --mk-soft: #faf0ec;
-  --danger: #b3372f;
+  --danger: #8f2b45;      /* 와인색 — 민경 주홍과 계열 분리 */
   --radius: 12px;
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   font-size: 16px;
@@ -158,7 +158,13 @@ h2 { font-size: .92rem; font-weight: 800; margin: 24px 0 8px; }
 .msg.bad { color: var(--danger); }
 
 /* ── 내역 (안 2 · 장부 줄) ── */
-.month-nav { display: flex; align-items: center; justify-content: center; gap: 14px; margin: 2px 0 8px; }
+.month-nav { display: flex; align-items: center; justify-content: center; gap: 14px; margin: 2px 0 8px; position: relative; }
+.today-chip {
+  position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+  font-size: .68rem; font-weight: 800; padding: 5px 10px; border-radius: 999px;
+  background: var(--ink); color: var(--paper);
+}
+.today-chip:active { transform: translateY(-50%) scale(0.95); }
 .mo-arrow { font-size: .7rem; color: var(--ink-2); padding: 8px 10px; }
 #mo-label { font-family: "Nanum Myeongjo", serif; font-size: 1.15rem; font-weight: 700; min-width: 130px; text-align: center; }
 #mo-label .car { font-size: .6rem; color: var(--ink-2); margin-left: 4px; }
@@ -182,7 +188,7 @@ h2 { font-size: .92rem; font-weight: 800; margin: 24px 0 8px; }
   padding: 10px 0; border-bottom: 1px dashed #e6e0ca;
 }
 .lrow:last-child { border-bottom: 0; }
-.lrow .d { font-size: .7rem; font-weight: 800; color: #b5b09c; min-width: 26px; font-variant-numeric: tabular-nums; }
+.lrow .d { font-size: .7rem; font-weight: 800; color: var(--ink-2); min-width: 26px; font-variant-numeric: tabular-nums; }
 .lrow .cat { font-size: .79rem; font-weight: 800; min-width: 64px; color: var(--ink); }
 .lrow.km .cat { color: var(--km); }
 .lrow.mk .cat { color: var(--mk); }
@@ -206,7 +212,7 @@ h2 { font-size: .92rem; font-weight: 800; margin: 24px 0 8px; }
 .cat-bars { background: var(--card); border: 1px solid var(--card-line); border-radius: 12px; padding: 12px 14px; }
 .cbar { display: grid; grid-template-columns: 76px 1fr auto; align-items: center; gap: 8px; padding: 6px 0; }
 .cbar .n { font-size: .76rem; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cbar .track { height: 14px; border-radius: 0 4px 4px 0; background: #b0a884; min-width: 2px; }
+.cbar .track { height: 14px; border-radius: 0 4px 4px 0; background: #9a8f66; min-width: 2px; }
 .cbar .val { font-size: .76rem; font-weight: 800; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
 .cbar .val small { display: block; font-size: .62rem; font-weight: 700; color: var(--ink-2); }
 .an-split { background: var(--card); border: 1px solid var(--card-line); border-radius: 12px; padding: 14px; }
@@ -244,7 +250,8 @@ h2 { font-size: .92rem; font-weight: 800; margin: 24px 0 8px; }
 .card-row .sub { font-size: .75rem; color: var(--ink-2); font-variant-numeric: tabular-nums; }
 .card-row.paused { opacity: .55; }
 .row-2 { display: flex; gap: 10px; }
-.row-2 > * { flex: 1; }
+.row-2 > * { flex: 1; min-width: 0; }
+.row-2 input, .row-2 select { min-width: 0; }
 .fine { font-size: .72rem; color: var(--ink-2); margin-top: 20px; }
 
 /* ── 배너/토스트 ── */
