@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0e6b4a">
+<title>Pairfolio</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Gothic+A1:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ── 로그인 ─────────────────────────────── -->
+<section id="screen-auth" class="screen" hidden>
+  <div class="auth-box">
+    <h1 class="wordmark">Pairfolio</h1>
+    <p class="auth-sub">부부 가계 원장</p>
+    <form id="login-form">
+      <label>이메일<input type="email" id="login-email" autocomplete="username" required></label>
+      <label>비밀번호<input type="password" id="login-pw" autocomplete="current-password" required></label>
+      <button type="submit" class="btn-primary" id="login-btn">로그인</button>
+      <p id="login-err" class="err" hidden></p>
+    </form>
+  </div>
+</section>
+
+<!-- ── 앱 본체 ────────────────────────────── -->
+<div id="app" hidden>
+
+  <header id="topbar">
+    <span class="wordmark small">Pairfolio</span>
+    <span id="me-chip" class="chip"></span>
+  </header>
+
+  <div id="banner" class="banner" hidden>
+    <span id="banner-text"></span>
+    <button id="banner-retry" class="btn-ghost">재전송</button>
+  </div>
+
+  <!-- 입력 -->
+  <main id="tab-add" class="tab">
+    <div class="amount-row">
+      <input id="add-amount" type="text" inputmode="decimal" placeholder="0" autocomplete="off">
+      <button id="add-currency" class="chip-btn" type="button">EUR</button>
+    </div>
+    <p id="add-fx-note" class="fx-note" hidden></p>
+    <div id="cat-grid" class="cat-grid"></div>
+    <div class="add-meta">
+      <input id="add-date" type="date">
+      <div class="seg" id="add-who"></div>
+    </div>
+    <input id="add-memo" type="text" placeholder="메모 (선택)" autocomplete="off">
+    <p id="add-trip-note" class="fx-note" hidden></p>
+    <button id="add-save" class="btn-primary big">저장</button>
+    <p id="add-msg" class="msg" hidden></p>
+  </main>
+
+  <!-- 내역 -->
+  <main id="tab-list" class="tab" hidden>
+    <div class="month-nav">
+      <button id="mo-prev" class="btn-ghost" aria-label="이전 달">&#9664;</button>
+      <strong id="mo-label"></strong>
+      <button id="mo-next" class="btn-ghost" aria-label="다음 달">&#9654;</button>
+    </div>
+    <div id="mo-summary" class="mo-summary"></div>
+    <div id="tx-list"></div>
+    <button id="open-trash" class="btn-ghost trash-link">휴지통 보기</button>
+  </main>
+
+  <!-- 반복 -->
+  <main id="tab-rules" class="tab" hidden>
+    <div class="section-head">
+      <h2>반복 규칙</h2>
+      <button id="rule-new" class="btn-ghost">+ 추가</button>
+    </div>
+    <div id="rule-list"></div>
+  </main>
+
+  <!-- 더보기 -->
+  <main id="tab-more" class="tab" hidden>
+    <h2>여행</h2>
+    <div id="trip-list"></div>
+    <button id="trip-new" class="btn-ghost">+ 여행 추가</button>
+    <h2>내보내기</h2>
+    <div class="row-2">
+      <button id="export-csv" class="btn-ghost">CSV (거래)</button>
+      <button id="export-json" class="btn-ghost">JSON (전체 백업)</button>
+    </div>
+    <h2>계좌</h2>
+    <div id="account-list"></div>
+    <h2>계정</h2>
+    <button id="logout" class="btn-ghost">로그아웃</button>
+    <p class="fine">온라인 전용 · 저장 실패분은 기기에 보관 후 재전송</p>
+  </main>
+
+  <!-- 탭 바 -->
+  <nav id="tabbar">
+    <button data-tab="add" class="on" aria-label="입력">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      <span>입력</span>
+    </button>
+    <button data-tab="list" aria-label="내역">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+      <span>내역</span>
+    </button>
+    <button data-tab="rules" aria-label="반복">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>
+      <span>반복</span>
+    </button>
+    <button data-tab="more" aria-label="더보기">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+      <span>더보기</span>
+    </button>
+  </nav>
+</div>
+
+<!-- ── 모달 (수정 / 규칙 / 여행 / 휴지통) ── -->
+<div id="modal-wrap" hidden>
+  <div id="modal-back"></div>
+  <div id="modal" role="dialog" aria-modal="true"></div>
+</div>
+
+<div id="toast" hidden></div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
