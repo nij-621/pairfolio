@@ -18,7 +18,7 @@
 <section id="screen-auth" class="screen" hidden>
   <div class="auth-box">
     <h1 class="wordmark">Pairfolio</h1>
-    <p class="auth-sub">부부 가계 원장</p>
+    <p class="auth-sub">함께 쓰는 가계부</p>
     <form id="login-form">
       <label>이메일<input type="email" id="login-email" autocomplete="username" required></label>
       <label>비밀번호<input type="password" id="login-pw" autocomplete="current-password" required></label>
@@ -63,9 +63,9 @@
   <!-- 내역 -->
   <main id="tab-list" class="tab" hidden>
     <div class="month-nav">
-      <button id="mo-prev" class="btn-ghost" aria-label="이전 달">&#9664;</button>
-      <strong id="mo-label"></strong>
-      <button id="mo-next" class="btn-ghost" aria-label="다음 달">&#9654;</button>
+      <button id="mo-prev" class="mo-arrow" aria-label="이전 달">&#9664;</button>
+      <button id="mo-label" aria-label="달 선택"></button>
+      <button id="mo-next" class="mo-arrow" aria-label="다음 달">&#9654;</button>
     </div>
     <div id="mo-summary" class="mo-summary"></div>
     <div id="tx-list"></div>

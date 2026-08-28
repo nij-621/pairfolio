@@ -67,6 +67,7 @@ async function enterApp(session) {
   $("me-chip").textContent = m.display_name;
   $("me-chip").classList.add(m.member_code.toLowerCase());
   await loadRefs();
+  await loadCatFreq();
   initAddForm();
   renderList();
   renderRules();
@@ -91,7 +92,18 @@ async function postRecurring() {
 }
 
 // ─────────────────────────────────────────── 입력 탭
-const addState = { currency: "EUR", catId: null, who: null };
+const addState = { currency: "EUR", catId: null, who: null, showAll: false };
+
+// 최근 3개월, 내(로그인 구성원) 지출 빈도 → 즐겨찾기 카테고리 순서
+let catFreq = {};
+async function loadCatFreq() {
+  const since = new Date(); since.setMonth(since.getMonth() - 3);
+  const { data } = await sb.from("transactions").select("category_id")
+    .eq("paid_by", me.member_code).eq("tx_type", "expense")
+    .is("deleted_at", null).gte("tx_date", since.toLocaleDateString("sv-SE"));
+  catFreq = {};
+  for (const t of data ?? []) catFreq[t.category_id] = (catFreq[t.category_id] ?? 0) + 1;
+}
 
 function initAddForm() {
   addState.who = me.member_code;
@@ -102,18 +114,40 @@ function initAddForm() {
   updateTripNote();
   $("add-amount").addEventListener("input", updateSaveButton);
 }
-function activeCats() {
-  return cats.filter((c) => !c.archived && c.kind === "expense")
-    .concat(cats.filter((c) => !c.archived && c.kind === "income"));
-}
 function renderCatGrid() {
   const g = $("cat-grid"); g.innerHTML = "";
-  for (const c of activeCats()) {
+  const make = (c) => {
     const b = document.createElement("button");
     b.type = "button";
-    b.textContent = c.name + (c.kind === "income" ? " ↘" : "");
+    b.textContent = c.name;
     b.className = addState.catId === c.id ? "on" : "";
     b.onclick = () => { addState.catId = c.id; renderCatGrid(); updateSaveButton(); };
+    return b;
+  };
+  const exp = cats.filter((c) => !c.archived && c.kind === "expense")
+    .sort((a, b) => (catFreq[b.id] ?? 0) - (catFreq[a.id] ?? 0) || a.sort - b.sort);
+  const inc = cats.filter((c) => !c.archived && c.kind === "income");
+  const top = exp.slice(0, 8);
+  const rest = exp.slice(8);
+  const mustExpand = addState.catId && !top.some((c) => c.id === addState.catId);
+  const showAll = addState.showAll || mustExpand;
+
+  top.forEach((c) => g.appendChild(make(c)));
+  if (!showAll) {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "more-btn";
+    b.textContent = `전체 보기 (${rest.length + inc.length}) ▾`;
+    b.onclick = () => { addState.showAll = true; renderCatGrid(); };
+    g.appendChild(b);
+  } else {
+    rest.forEach((c) => g.appendChild(make(c)));
+    const sep = document.createElement("p");
+    sep.className = "cat-sep"; sep.textContent = "수입";
+    g.appendChild(sep);
+    inc.forEach((c) => g.appendChild(make(c)));
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "more-btn"; b.textContent = "접기 ▴";
+    b.onclick = () => { addState.showAll = false; if (mustExpand) addState.catId = null; renderCatGrid(); updateSaveButton(); };
     g.appendChild(b);
   }
 }
@@ -224,7 +258,8 @@ function showAddMsg(text, bad = false) {
 }
 function resetAddForm() {
   $("add-amount").value = ""; $("add-memo").value = "";
-  addState.catId = null; renderCatGrid(); updateSaveButton();
+  addState.catId = null; addState.showAll = false;
+  renderCatGrid(); updateSaveButton();
   $("add-amount").focus();
 }
 async function insertTx(tx) {
@@ -263,8 +298,40 @@ $("banner-retry").addEventListener("click", flushQueue);
 window.addEventListener("online", flushQueue);
 
 // ─────────────────────────────────────────── 내역 탭
+const MIN_YM = "2018-10";
 $("mo-prev").addEventListener("click", () => shiftMonth(-1));
 $("mo-next").addEventListener("click", () => shiftMonth(1));
+$("mo-label").addEventListener("click", openMonthPicker);
+
+function openMonthPicker() {
+  openModal(`<h3>달 선택</h3><div class="pk-years" id="pk-years"></div><div class="pk-mos" id="pk-mos"></div>`);
+  const nowYm = todayStr().slice(0, 7);
+  let selY = Number(listMonth.slice(0, 4));
+  const renderMos = () => {
+    const w = $("pk-mos"); w.innerHTML = "";
+    for (let m = 1; m <= 12; m++) {
+      const ym = `${selY}-${String(m).padStart(2, "0")}`;
+      const b = document.createElement("button");
+      b.type = "button"; b.textContent = m + "월";
+      b.disabled = ym < MIN_YM || ym > nowYm;
+      b.className = ym === listMonth ? "on" : "";
+      b.onclick = () => { listMonth = ym; closeModal(); renderList(); };
+      w.appendChild(b);
+    }
+  };
+  const renderYears = () => {
+    const w = $("pk-years"); w.innerHTML = "";
+    for (let y = 2018; y <= Number(nowYm.slice(0, 4)); y++) {
+      const b = document.createElement("button");
+      b.type = "button"; b.textContent = y;
+      b.className = y === selY ? "on" : "";
+      b.onclick = () => { selY = y; renderYears(); renderMos(); };
+      w.appendChild(b);
+      if (y === selY) requestAnimationFrame(() => b.scrollIntoView({ inline: "center", block: "nearest" }));
+    }
+  };
+  renderYears(); renderMos();
+}
 function shiftMonth(d) {
   const [y, m] = listMonth.split("-").map(Number);
   const nd = new Date(y, m - 1 + d, 1);
@@ -277,10 +344,11 @@ function monthRange(ym) {
   return [`${ym}-01`, `${ym}-${String(last).padStart(2, "0")}`];
 }
 
+const fmtNum = (n) => Number(n).toLocaleString("de-AT", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
 async function renderList() {
-  if ($("tab-list").hidden && $("mo-label").textContent) { /* 백그라운드 갱신 허용 */ }
   const [ly, lm] = listMonth.split("-");
-  $("mo-label").textContent = `${ly}년 ${Number(lm)}월`;
+  $("mo-label").innerHTML = `${ly}년 ${Number(lm)}월 <span class="car">▾</span>`;
   const [from, to] = monthRange(listMonth);
   const { data, error } = await sb.from("transactions")
     .select("*").is("deleted_at", null)
@@ -296,38 +364,37 @@ async function renderList() {
     }
     if (t.tx_type === "income") income += Number(t.amount_eur);
   }
-  let splitHtml = "";
-  if (spend > 0) {
-    const pk = Math.round((spendKm / spend) * 100);
-    splitHtml = `<div class="split-bar"><i class="k" style="width:${pk}%"></i><i class="m" style="width:${100 - pk}%"></i></div>
-      <div class="split-lbl"><span class="k">규문 ${fmtEur(spendKm)}</span><span class="m">민경 ${fmtEur(spendMk)}</span></div>`;
-  }
   $("mo-summary").innerHTML =
-    `<div class="mo-totals"><span>지출 <b>${fmtEur(spend)}</b></span><span>수입 <b>${fmtEur(income)}</b></span></div>` + splitHtml;
+    `<div class="mo-totals"><span>지출 <b>${fmtEur(spend)}</b></span><span>수입 <b>${fmtEur(income)}</b></span></div>`;
 
   const list = $("tx-list"); list.innerHTML = "";
   if (!data.length) { list.innerHTML = `<p class="empty">이 달 기록이 없습니다</p>`; return; }
+  const sheet = document.createElement("div");
+  sheet.className = "sheet";
   let curDay = "";
   for (const t of data) {
-    if (t.tx_date !== curDay) {
-      curDay = t.tx_date;
-      const h = document.createElement("p");
-      h.className = "day-head";
-      h.textContent = Number(curDay.slice(8, 10)) + "일";
-      list.appendChild(h);
-    }
-    list.appendChild(txRow(t));
+    const firstOfDay = t.tx_date !== curDay;
+    curDay = t.tx_date;
+    sheet.appendChild(txRow(t, false, firstOfDay));
+  }
+  list.appendChild(sheet);
+  if (spend > 0) {
+    const tl = document.createElement("div");
+    tl.className = "tot-line";
+    tl.innerHTML = `<span class="k">규문 ${fmtNum(spendKm)}</span><span>${Number(lm)}월 지출 ${fmtNum(spend)}</span><span class="m">민경 ${fmtNum(spendMk)}</span>`;
+    list.appendChild(tl);
   }
 }
 function catName(id) { return cats.find((c) => c.id === id)?.name ?? "—"; }
-function txRow(t, inTrash = false) {
+function txRow(t, inTrash = false, showDay = true) {
   const b = document.createElement("button");
-  b.className = "tx-row " + t.paid_by.toLowerCase(); b.type = "button";
+  b.className = "lrow " + t.paid_by.toLowerCase(); b.type = "button";
   const income = t.tx_type === "income";
   b.innerHTML =
+    `<span class="d">${showDay ? Number(t.tx_date.slice(8, 10)) : ""}</span>` +
     `<span class="cat">${esc(catName(t.category_id))}</span>` +
     `<span class="memo">${esc(t.memo)}</span>` +
-    `<span class="amt ${income ? "income" : ""}">${fmtEur(t.amount_eur)}</span>`;
+    `<span class="amt ${income ? "income" : ""}">${fmtNum(t.amount_eur)}</span>`;
   b.onclick = () => (inTrash ? openTrashItem(t) : openEditTx(t));
   return b;
 }
@@ -385,7 +452,7 @@ $("open-trash").addEventListener("click", async () => {
   const { data } = await sb.from("transactions")
     .select("*").not("deleted_at", "is", null)
     .order("deleted_at", { ascending: false }).limit(100);
-  openModal(`<h3>휴지통</h3><div id="trash-list"></div>`);
+  openModal(`<h3>휴지통</h3><div id="trash-list" class="sheet"></div>`);
   const wrap = $("trash-list");
   if (!data?.length) { wrap.innerHTML = `<p class="empty">비어 있음</p>`; return; }
   for (const t of data) wrap.appendChild(txRow(t, true));

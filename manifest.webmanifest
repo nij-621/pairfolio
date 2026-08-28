@@ -1,7 +1,7 @@
 {
   "name": "Pairfolio",
   "short_name": "Pairfolio",
-  "description": "부부 가계 원장",
+  "description": "함께 쓰는 가계부",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#fafaf7",

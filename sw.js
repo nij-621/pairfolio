@@ -1,5 +1,5 @@
 // Pairfolio SW — 앱 셸만 캐시. Supabase/환율 API 응답은 절대 캐시하지 않음.
-const CACHE = "pairfolio-v3";
+const CACHE = "pairfolio-v4";
 const SHELL = ["./", "./index.html", "./style.css", "./app.js", "./config.js", "./manifest.webmanifest"];
 
 self.addEventListener("install", (e) => {
