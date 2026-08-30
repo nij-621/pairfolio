@@ -88,6 +88,11 @@
     <div id="an-body"></div>
   </main>
 
+  <!-- 자산 -->
+  <main id="tab-assets" class="tab" hidden>
+    <div id="as-body"></div>
+  </main>
+
   <!-- 더보기 -->
   <main id="tab-more" class="tab" hidden>
     <div class="section-head">
@@ -101,13 +106,14 @@
     <h2>내보내기</h2>
     <div class="row-2">
       <button id="export-csv" class="btn-ghost">CSV (거래)</button>
-      <button id="export-json" class="btn-ghost">JSON (전체 백업)</button>
+      <button id="export-snap" class="btn-ghost">CSV (자산)</button>
+      <button id="export-json" class="btn-ghost">JSON (백업)</button>
     </div>
     <h2>계좌</h2>
     <div id="account-list"></div>
     <h2>계정</h2>
     <button id="logout" class="btn-ghost">로그아웃</button>
-    <p class="fine">온라인 전용 · 저장 실패분은 기기에 보관 후 재전송 · v13</p>
+    <p class="fine">온라인 전용 · 저장 실패분은 기기에 보관 후 재전송 · v14</p>
   </main>
 
   <!-- 탭 바 -->
@@ -123,6 +129,10 @@
     <button data-tab="stats" aria-label="분석">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M7 16h4"/><path d="M7 11h8"/><path d="M7 6h12"/></svg>
       <span>분석</span>
+    </button>
+    <button data-tab="assets" aria-label="자산">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>
+      <span>자산</span>
     </button>
     <button data-tab="more" aria-label="더보기">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>

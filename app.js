@@ -1088,6 +1088,375 @@ function openTripForm(t) {
   };
 }
 
+// ─────────────────────────────────────────── 자산 탭 (4단계 축소판 — 자동 시세 없음)
+// 공식 기록은 월 1회 손 스냅샷뿐. IPS 목표·허용 범위는 앱 상수(IPS 변경은 연 1회 서면 절차).
+const IPS_BANDS = [
+  { cls: "core",      name: "글로벌 주식 코어", target: 54,   lo: 49,   hi: 59 },
+  { cls: "nasdaq",    name: "나스닥 100",       target: 6,    lo: null, hi: 6.5 },
+  { cls: "satellite", name: "위성 (개별주)",    target: null, lo: null, hi: 5 },
+  { cls: "bond",      name: "국채 EUR 헤지",    target: 35,   lo: 30,   hi: 40 },
+];
+const IPS_RISK_CAP = 65;                 // 위험자산(코어+나스닥+위성) 상한 %
+const BAND_SCALE = 70;                   // 비중 트랙 가로축 = 0~70%
+const CLS_KO = { core: "주식 코어", nasdaq: "나스닥", satellite: "위성", bond: "국채", cash: "현금" };
+const OWNER_ORDER = ["MK", "KM"];        // 스냅샷 기입 순서 — 정기 투자하는 민경 계좌 먼저
+
+let holdings = [];   // 보관 포함 전체
+let snaps = [];      // portfolio_snapshots 전체 (월×종목 수준이라 수백 행 규모)
+let trInterest = [];
+
+async function loadPortfolio() {
+  const [h, s, i] = await Promise.all([
+    sb.from("holdings").select("*").order("sort"),
+    sb.from("portfolio_snapshots").select("*").order("ym"),
+    sb.from("tr_interest").select("*").is("deleted_at", null)
+      .order("int_date", { ascending: false }).limit(200),
+  ]);
+  if (h.error || s.error || i.error) throw (h.error ?? s.error ?? i.error);
+  holdings = h.data; snaps = s.data; trInterest = i.data;
+}
+const holdingOf = (id) => holdings.find((h) => h.id === id);
+// TR 앱 표기("52.300,00")·영미 표기("52,300.00")·소수점 쉼표("4,10") 모두 안전 파싱
+function parseEuroNum(s) {
+  s = String(s ?? "").trim().replace(/[€\s]/g, "");
+  const dot = s.lastIndexOf("."), com = s.lastIndexOf(",");
+  if (dot !== -1 && com !== -1) s = com > dot ? s.replace(/\./g, "").replace(",", ".") : s.replace(/,/g, "");
+  else s = s.replace(/,/g, ".");
+  return parseFloat(s);
+}
+const snapValue = (hid, ym) => {
+  const s = snaps.find((x) => x.holding_id === hid && x.ym === ym);
+  return s ? Number(s.value_eur) : null;
+};
+
+async function renderAssets() {
+  const body = $("as-body");
+  body.innerHTML = `<p class="empty">불러오는 중…</p>`;
+  try { await loadPortfolio(); }
+  catch (e) {
+    const missing = /does not exist|relation|schema cache/i.test(e.message ?? "");
+    body.innerHTML = `<p class="empty">불러오기 실패${missing ? " — migrations/006_portfolio.sql을 SQL Editor에서 먼저 실행하세요" : ""}</p>`;
+    return;
+  }
+
+  const curYm = todayStr().slice(0, 7);
+  const byYm = {};
+  for (const s of snaps) {
+    if (!holdingOf(s.holding_id)) continue;
+    byYm[s.ym] = (byYm[s.ym] ?? 0) + Number(s.value_eur);
+  }
+  const ymList = Object.keys(byYm).sort();
+  const lastYm = ymList[ymList.length - 1] ?? null;
+
+  // 마지막 스냅샷 달 기준 자산군 합계 (비중·종목 리스트의 단일 기준 시점)
+  const clsSum = {};
+  let total = 0;
+  if (lastYm) for (const s of snaps.filter((x) => x.ym === lastYm)) {
+    const h = holdingOf(s.holding_id); if (!h) continue;
+    clsSum[h.asset_class] = (clsSum[h.asset_class] ?? 0) + Number(s.value_eur);
+    total += Number(s.value_eur);
+  }
+  const pctOf = (cls) => (total > 0 ? ((clsSum[cls] ?? 0) / total) * 100 : 0);
+  const risk = pctOf("core") + pctOf("nasdaq") + pctOf("satellite");
+
+  const bandRows = IPS_BANDS.map((b) => {
+    const p = pctOf(b.cls);
+    const over = total > 0 && ((b.hi != null && p > b.hi) || (b.lo != null && p < b.lo));
+    const zoneL = ((b.lo ?? 0) / BAND_SCALE) * 100;
+    const zoneR = 100 - (Math.min(b.hi, BAND_SCALE) / BAND_SCALE) * 100;
+    const tick = (Math.min(p, BAND_SCALE) / BAND_SCALE) * 100;
+    const rangeTxt = b.lo != null ? `목표 ${b.target} · ${b.lo}~${b.hi}` : `상한 ${b.hi}`;
+    return `
+      <div class="band">
+        <div class="r1"><span class="n">${b.name}</span>
+          <span class="v ${over ? "over" : ""}">${p.toFixed(1)}%<small>${rangeTxt}</small></span></div>
+        <div class="band-track"><span class="zone" style="left:${zoneL}%;right:${zoneR}%"></span><span class="tick ${over ? "over" : ""}" style="left:${tick.toFixed(1)}%"></span></div>
+      </div>`;
+  }).join("");
+
+  const [cy, cm] = curYm.split("-");
+  const nudge = lastYm !== curYm
+    ? `<div class="as-nudge"><span>${Number(cm)}월 스냅샷이 아직 없어요</span><button type="button" class="today-btn" id="as-snap-new">기록하기</button></div>`
+    : `<button type="button" class="btn-ghost as-ghost" id="as-snap-new">${Number(cm)}월 스냅샷 수정</button>`;
+
+  const yearSum = trInterest.filter((t) => t.int_date.startsWith(cy)).reduce((s, t) => s + Number(t.amount_eur), 0);
+  const intRows = trInterest.slice(0, 4).map((t) => `
+    <button type="button" class="lrow" data-int="${t.id}">
+      <span class="d">${Number(t.int_date.slice(5, 7))}.${t.int_date.slice(8, 10)}</span>
+      <span class="own-dot ${t.owner.toLowerCase()}"></span>
+      <span class="memo">${esc(t.memo || "현금 이자")}</span>
+      <span class="amt income">${fmtNum(t.amount_eur)}</span>
+    </button>`).join("");
+
+  const holdRows = holdings.filter((h) => !h.archived).concat(holdings.filter((h) => h.archived)).map((h) => {
+    const v = lastYm != null ? snapValue(h.id, lastYm) : null;
+    return `
+      <button type="button" class="lrow${h.archived ? " arch" : ""}" data-hold="${h.id}" ${h.archived ? 'style="opacity:.5"' : ""}>
+        <span class="own-dot ${h.owner.toLowerCase()}"></span>
+        <span class="cat" style="min-width:0;flex:1;text-align:left">${esc(h.name)}${h.archived ? " (보관)" : ""}</span>
+        <span class="cls">${CLS_KO[h.asset_class]}</span>
+        <span class="amt">${v == null ? "—" : fmtNum(v)}</span>
+      </button>`;
+  }).join("");
+
+  body.innerHTML = `
+    <div class="sheet as-hero">
+      <p class="hv">${total > 0 ? fmtNum(total) + " €" : "—"}</p>
+      <p class="hd">${lastYm ? `${lastYm.slice(0, 4)}년 ${Number(lastYm.slice(5))}월 스냅샷 · 두 계좌 합산 · ${ymList.length}회째` : "첫 스냅샷을 기록해 주세요"}</p>
+    </div>
+    ${nudge}
+
+    <p class="an-sec">IPS 비중 점검</p>
+    <div class="sheet" style="padding:12px 14px">
+      ${total > 0 ? bandRows + `
+      <div class="as-risk ${risk > IPS_RISK_CAP ? "over" : ""}"><span>위험자산 합계</span><span>${risk.toFixed(1)}% / 상한 ${IPS_RISK_CAP}%</span></div>`
+      : `<p class="empty">스냅샷이 쌓이면 여기서 IPS 허용 범위를 점검해요</p>`}
+    </div>
+    ${total > 0 ? `<p class="an-note">비중은 두 계좌 합산 기준 · 범위 밖이면 신규 자금으로 우선 조정, 매도는 최후 수단 (IPS 6장)</p>` : ""}
+
+    <p class="an-sec">평가액 추이</p>
+    <p class="ct-label" id="as-label">&nbsp;</p>
+    <div class="sheet" style="padding:12px 14px" id="as-chart">
+      ${ymList.length ? "" : `<p class="empty">기록이 없습니다</p>`}
+    </div>
+
+    <div class="section-head" style="margin-top:22px"><h2 style="margin:0">TR 이자 · 올해 ${fmtNum(yearSum)} €</h2><button type="button" class="btn-ghost" id="as-int-new">+ 기입</button></div>
+    <div class="sheet">${intRows || `<p class="empty">기록 없음</p>`}</div>
+    <p class="an-note">가계 수입에 합산되지 않아요 — 저축률 계산과 분리 (투자 수익)</p>
+
+    <div class="section-head" style="margin-top:22px"><h2 style="margin:0">보유 종목</h2><button type="button" class="btn-ghost" id="as-hold-new">+ 추가</button></div>
+    <div class="sheet">${holdRows || `<p class="empty">종목을 먼저 등록하세요</p>`}</div>
+    <p class="an-note">펜 색 점 = 계좌 소유자 · 매도한 종목은 삭제 대신 보관 (스냅샷 이력 유지)</p>`;
+
+  if (ymList.length) drawAssetChart(ymList, byYm);
+  $("as-snap-new").onclick = () => openSnapshotForm(curYm);
+  $("as-int-new").onclick = () => openInterestForm(null);
+  $("as-hold-new").onclick = () => openHoldingForm(null);
+  body.querySelectorAll("[data-int]").forEach((b) =>
+    b.onclick = () => openInterestForm(trInterest.find((t) => t.id === b.dataset.int)));
+  body.querySelectorAll("[data-hold]").forEach((b) =>
+    b.onclick = () => openHoldingForm(holdings.find((h) => h.id === b.dataset.hold)));
+}
+
+function drawAssetChart(ymList, byYm) {
+  const vals = ymList.map((k) => byYm[k]);
+  const W = 340, H = 150, L = 8, R = 8, T = 18, B = 20;
+  const n = vals.length;
+  const max = Math.max(...vals, 1);
+  const x = (i) => (n === 1 ? W / 2 : L + (i * (W - L - R)) / (n - 1));
+  const y = (v) => T + (1 - v / max) * (H - T - B);
+  const line = vals.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(" ");
+  const step = n === 1 ? W : (W - L - R) / (n - 1);
+  const dots = n <= 40
+    ? vals.map((v, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="2.6" fill="var(--ink)"/>`).join("") : "";
+  const hits = vals.map((v, i) =>
+    `<rect data-i="${i}" x="${(x(i) - step / 2).toFixed(1)}" y="0" width="${step.toFixed(1)}" height="${H}" fill="transparent"/>`).join("");
+  const ticks = ymList.map((k, i) => {
+    const mo = Number(k.slice(5));
+    const show = n <= 8 || mo === 1 || i === 0;
+    if (!show) return "";
+    const txt = mo === 1 || i === 0 ? `'${k.slice(2, 4)}.${mo}` : `${mo}월`;
+    const anchor = i === 0 ? "start" : i === n - 1 ? "end" : "middle";
+    return `<text x="${x(i).toFixed(1)}" y="${H - 5}" text-anchor="${anchor}" font-size="9" fill="var(--ink-2)">${txt}</text>`;
+  }).join("");
+  $("as-chart").innerHTML = `
+    <svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
+      <line x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}" stroke="var(--card-line)"/>
+      <path d="${line} L${x(n - 1).toFixed(1)} ${H - B} L${x(0).toFixed(1)} ${H - B} Z" fill="rgba(38,38,32,.07)"/>
+      <path d="${line}" fill="none" stroke="var(--ink)" stroke-width="1.8" stroke-linejoin="round"/>
+      ${dots}
+      <circle id="as-dot" r="4.2" fill="var(--paper)" stroke="var(--ink)" stroke-width="2" visibility="hidden"/>
+      ${hits}${ticks}
+    </svg>`;
+  const dot = $("as-dot");
+  const select = (i) => {
+    dot.setAttribute("visibility", "visible");
+    dot.setAttribute("cx", x(i).toFixed(1));
+    dot.setAttribute("cy", y(vals[i]).toFixed(1));
+    $("as-label").textContent = `${ymList[i].slice(0, 4)}년 ${Number(ymList[i].slice(5))}월 · ${fmtEur(vals[i])}`;
+  };
+  $("as-chart").querySelectorAll("rect[data-i]").forEach((rc) =>
+    rc.onclick = () => select(Number(rc.dataset.i)));
+  select(n - 1);
+}
+
+// ── 스냅샷 기입 (같은 달 재기입 = 덮어쓰기) ──
+function openSnapshotForm(ym) {
+  const curYm = todayStr().slice(0, 7);
+  const active = holdings.filter((h) => !h.archived);
+  if (!active.length) { toast("종목을 먼저 등록하세요"); return openHoldingForm(null); }
+
+  openModal(`
+    <div class="sn-nav">
+      <button type="button" class="mo-arrow" id="sn-prev">&#9664;</button>
+      <h3 id="sn-title"></h3>
+      <button type="button" class="mo-arrow" id="sn-next">&#9654;</button>
+    </div>
+    <p class="fx-note">TR 앱 → 포트폴리오의 평가액을 그대로 옮겨 적기. 빈칸은 기록하지 않아요.</p>
+    <div id="sn-rows"></div>
+    <div class="sn-sum"><span>합계</span><span id="sn-total">—</span></div>
+    <button class="btn-primary" id="sn-save">기입하기</button>`);
+
+  const prevYmOf = (m) => { const ks = [...new Set(snaps.map((s) => s.ym))].filter((k) => k < m).sort(); return ks[ks.length - 1] ?? null; };
+
+  const render = () => {
+    $("sn-title").textContent = `${ym.slice(0, 4)}년 ${Number(ym.slice(5))}월 스냅샷`;
+    $("sn-next").disabled = ym >= curYm;
+    const prevYm = prevYmOf(ym);
+    const wrap = $("sn-rows"); wrap.innerHTML = "";
+    for (const code of OWNER_ORDER) {
+      const list = active.filter((h) => h.owner === code);
+      if (!list.length) continue;
+      const g = document.createElement("p");
+      g.className = "sn-group " + code.toLowerCase();
+      g.innerHTML = `<span class="own-dot ${code.toLowerCase()}"></span>${WHO_NAME[code]} 계좌`;
+      wrap.appendChild(g);
+      for (const h of list) {
+        const cur = snapValue(h.id, ym);
+        const prev = prevYm != null ? snapValue(h.id, prevYm) : null;
+        const row = document.createElement("div");
+        row.className = "sn-row";
+        row.innerHTML = `
+          <span class="lb">${esc(h.name)}${prev != null ? `<small>${Number(prevYm.slice(5))}월 ${fmtNum(prev)} €</small>` : ""}</span>
+          <input inputmode="decimal" data-hid="${h.id}" value="${cur ?? prev ?? ""}" placeholder="0">`;
+        wrap.appendChild(row);
+      }
+    }
+    const prevTotal = prevYm != null
+      ? snaps.filter((s) => s.ym === prevYm && holdingOf(s.holding_id)).reduce((s2, s) => s2 + Number(s.value_eur), 0) : null;
+    const updateSum = () => {
+      let sum = 0, any = false;
+      wrap.querySelectorAll("input[data-hid]").forEach((inp) => {
+        const v = parseEuroNum(inp.value);
+        if (!isNaN(v)) { sum += v; any = true; }
+      });
+      const d = prevTotal != null ? sum - prevTotal : null;
+      $("sn-total").innerHTML = any
+        ? `${fmtNum(sum)} €${d != null ? ` <span class="${d >= 0 ? "plus" : ""}">(${d >= 0 ? "+" : "−"}${fmtNum(Math.abs(d))})</span>` : ""}`
+        : "—";
+    };
+    wrap.querySelectorAll("input[data-hid]").forEach((inp) => inp.addEventListener("input", updateSum));
+    updateSum();
+  };
+  render();
+
+  const shift = (d) => {
+    const [yy, mm] = ym.split("-").map(Number);
+    const nd = new Date(yy, mm - 1 + d, 1).toLocaleDateString("sv-SE").slice(0, 7);
+    if (nd > curYm) return;
+    ym = nd; render();
+  };
+  $("sn-prev").onclick = () => shift(-1);
+  $("sn-next").onclick = () => shift(1);
+
+  $("sn-save").onclick = async () => {
+    const rows = [];
+    $("sn-rows").querySelectorAll("input[data-hid]").forEach((inp) => {
+      const v = parseEuroNum(inp.value);
+      if (!isNaN(v) && v >= 0) rows.push({ ym, holding_id: inp.dataset.hid, value_eur: Math.round(v * 100) / 100 });
+    });
+    if (!rows.length) return toast("평가액을 입력하세요");
+    const btn = $("sn-save"); btn.disabled = true;
+    const { error } = await sb.from("portfolio_snapshots").upsert(rows, { onConflict: "ym,holding_id" });
+    btn.disabled = false;
+    if (error) return toast("저장 실패: " + error.message);
+    closeModal(); renderAssets(); toast(`${Number(ym.slice(5))}월 스냅샷 기록됨`);
+  };
+}
+
+// ── TR 이자 기입 ──
+function openInterestForm(t) {
+  const isNew = !t;
+  t = t ?? { int_date: todayStr(), owner: me.member_code, amount_eur: "", memo: "" };
+  openModal(`
+    <h3>${isNew ? "TR 이자 기입" : "TR 이자 수정"}</h3>
+    <div class="row-2">
+      <label>날짜<input id="i-date" type="date" value="${t.int_date}"></label>
+      <label>금액 (EUR)<input id="i-amt" inputmode="decimal" value="${t.amount_eur}"></label>
+    </div>
+    <label>계좌</label>
+    <div class="seg" id="i-owner"></div>
+    <label>메모 (선택)<input id="i-memo" value="${esc(t.memo)}" placeholder="현금 이자"></label>
+    <div class="actions">
+      ${isNew ? "" : `<button class="btn-ghost danger" id="i-del">삭제</button>`}
+      <button class="btn-ghost" id="i-cancel">취소</button>
+      <button class="btn-primary" id="i-save">저장</button>
+    </div>`);
+  let owner = t.owner;
+  const seg = $("i-owner");
+  const renderSeg = () => {
+    seg.innerHTML = "";
+    for (const code of ["KM", "MK"]) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.innerHTML = `<span class="nib"></span>${WHO_NAME[code]}`;
+      b.className = (owner === code ? "on " : "") + code.toLowerCase();
+      b.onclick = () => { owner = code; renderSeg(); };
+      seg.appendChild(b);
+    }
+  };
+  renderSeg();
+  $("i-cancel").onclick = closeModal;
+  if (!isNew) $("i-del").onclick = async () => {
+    if (!confirm("이 이자 기록을 삭제할까요?")) return;
+    const { error } = await sb.from("tr_interest").update({ deleted_at: new Date().toISOString() }).eq("id", t.id);
+    if (error) return toast("삭제 실패");
+    closeModal(); renderAssets(); toast("삭제됨");
+  };
+  $("i-save").onclick = async () => {
+    const amt = parseEuroNum($("i-amt").value);
+    if (!amt || amt <= 0) return toast("금액을 입력하세요");
+    const row = {
+      int_date: $("i-date").value || todayStr(),
+      owner,
+      amount_eur: Math.round(amt * 100) / 100,
+      memo: $("i-memo").value.trim(),
+    };
+    const q = isNew ? sb.from("tr_interest").insert(row) : sb.from("tr_interest").update(row).eq("id", t.id);
+    const { error } = await q;
+    if (error) return toast("저장 실패: " + error.message);
+    closeModal(); renderAssets(); toast("저장됨");
+  };
+}
+
+// ── 종목 관리 (삭제 = 보관) ──
+function openHoldingForm(h) {
+  const isNew = !h;
+  h = h ?? { name: "", owner: me.member_code, asset_class: "core", archived: false };
+  const clsOpts = Object.entries(CLS_KO)
+    .map(([v, k]) => `<option value="${v}" ${h.asset_class === v ? "selected" : ""}>${k}</option>`).join("");
+  const whoOpts = ["KM", "MK"]
+    .map((w) => `<option value="${w}" ${h.owner === w ? "selected" : ""}>${WHO_NAME[w]}</option>`).join("");
+  openModal(`
+    <h3>${isNew ? "종목 추가" : "종목 수정"}</h3>
+    <label>이름<input id="h-name" value="${esc(h.name)}" placeholder="예: 글로벌 주식 코어"></label>
+    <div class="row-2">
+      <label>계좌 소유자<select id="h-owner">${whoOpts}</select></label>
+      <label>자산군<select id="h-cls">${clsOpts}</select></label>
+    </div>
+    <p class="fine">자산군에 연결돼야 IPS 비중 점검에 잡혀요. 현금은 비중 분모에만 포함.</p>
+    <div class="actions">
+      ${isNew ? "" : `<button class="btn-ghost ${h.archived ? "" : "danger"}" id="h-arch">${h.archived ? "복원" : "보관"}</button>`}
+      <button class="btn-ghost" id="h-cancel">취소</button>
+      <button class="btn-primary" id="h-save">저장</button>
+    </div>`);
+  $("h-cancel").onclick = closeModal;
+  if (!isNew) $("h-arch").onclick = async () => {
+    const { error } = await sb.from("holdings").update({ archived: !h.archived }).eq("id", h.id);
+    if (error) return toast("실패: " + error.message);
+    closeModal(); renderAssets(); toast(h.archived ? "복원됨" : "보관됨 — 스냅샷 이력은 유지돼요");
+  };
+  $("h-save").onclick = async () => {
+    const row = { name: $("h-name").value.trim(), owner: $("h-owner").value, asset_class: $("h-cls").value };
+    if (!row.name) return toast("이름을 입력하세요");
+    const q = isNew ? sb.from("holdings").insert({ ...row, sort: holdings.length + 1 })
+                    : sb.from("holdings").update(row).eq("id", h.id);
+    const { error } = await q;
+    if (error) return toast(/duplicate|unique/.test(error.message) ? "같은 소유자에 같은 이름이 이미 있어요" : "저장 실패: " + error.message);
+    closeModal(); renderAssets(); toast("저장됨");
+  };
+}
+
 // ── 내보내기 ──
 $("export-csv").addEventListener("click", async () => {
   const { data, error } = await sb.from("transactions")
@@ -1109,13 +1478,32 @@ function csvCell(v) {
   const s = String(v ?? "");
   return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }
+$("export-snap").addEventListener("click", async () => {
+  try { await loadPortfolio(); } catch { return toast("내보내기 실패 — 006_portfolio.sql 실행 여부를 확인하세요"); }
+  if (!snaps.length && !trInterest.length) return toast("내보낼 자산 기록이 없습니다");
+  const rows = [["구분", "날짜", "소유자", "항목", "자산군", "금액(EUR)"]];
+  for (const s of snaps) {
+    const h = holdingOf(s.holding_id); if (!h) continue;
+    rows.push(["스냅샷", s.ym, WHO_NAME[h.owner], h.name, CLS_KO[h.asset_class], s.value_eur]);
+  }
+  for (const t of [...trInterest].reverse()) {
+    rows.push(["이자", t.int_date, WHO_NAME[t.owner], t.memo || "현금 이자", "", t.amount_eur]);
+  }
+  downloadFile(`pairfolio-assets-${todayStr()}.csv`,
+    "﻿" + rows.map((r) => r.map(csvCell).join(",")).join("\r\n"), "text/csv");
+});
 $("export-json").addEventListener("click", async () => {
   const names = ["transactions", "recurring_rules", "recurring_occurrences", "categories", "accounts", "trips"];
+  const optional = ["holdings", "portfolio_snapshots", "tr_interest"];  // 006 미실행이어도 백업은 동작
   const dump = { exported_at: new Date().toISOString(), app: "pairfolio" };
   for (const n of names) {
     const { data, error } = await sb.from(n).select("*");
     if (error) return toast("내보내기 실패: " + n);
     dump[n] = data;
+  }
+  for (const n of optional) {
+    const { data, error } = await sb.from(n).select("*");
+    if (!error) dump[n] = data;
   }
   downloadFile(`pairfolio-backup-${todayStr()}.json`, JSON.stringify(dump, null, 1), "application/json");
 });
@@ -1131,9 +1519,10 @@ function downloadFile(name, content, type) {
 document.querySelectorAll("#tabbar button").forEach((b) => {
   b.addEventListener("click", () => {
     document.querySelectorAll("#tabbar button").forEach((x) => x.classList.toggle("on", x === b));
-    for (const t of ["add", "list", "stats", "more"]) $("tab-" + t).hidden = t !== b.dataset.tab;
+    for (const t of ["add", "list", "stats", "assets", "more"]) $("tab-" + t).hidden = t !== b.dataset.tab;
     if (b.dataset.tab === "list") renderList();
     if (b.dataset.tab === "stats") loadRefs().then(renderStats);
+    if (b.dataset.tab === "assets") renderAssets();
     if (b.dataset.tab === "more") loadRefs().then(() => { renderRules(); renderMore(); });
   });
 });
@@ -1152,7 +1541,7 @@ document.addEventListener("touchend", (e) => {
   const dy = e.changedTouches[0].clientY - swipeStart.y;
   swipeStart = null;
   if (Math.abs(dx) < 60 || Math.abs(dy) > 50) return;        // 수평으로 충분히 밀었을 때만
-  const order = ["add", "list", "stats", "more"];
+  const order = ["add", "list", "stats", "assets", "more"];
   const i = order.indexOf(document.querySelector("#tabbar button.on")?.dataset.tab);
   const next = order[i + (dx < 0 ? 1 : -1)];
   if (i >= 0 && next) document.querySelector(`#tabbar button[data-tab="${next}"]`).click();
