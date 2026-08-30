@@ -1090,9 +1090,9 @@ function openTripForm(t) {
 
 // ─────────────────────────────────────────── 자산 탭 (4단계 축소판 — 자동 시세 없음)
 // 공식 기록은 월 1회 손 스냅샷뿐. IPS 목표·허용 범위는 앱 상수(IPS 변경은 서면 절차).
-// 기준: 통합 확정안 v3 (2026-08-23). 전제조건(① KM 소득상실보험 ② KM IPS 공동서명) 충족
-// 전에는 임시 70/30 — 충족되면 아래를 { target: 80, lo: 75, hi: 85 }로 수정 (v3 6쪽).
-const IPS_STOCK = { target: 70, lo: 65, hi: 75 };  // 주식 비중 %, 분모 = 주식+채권(현금 제외)
+// 기준: 통합 확정안 v3 (2026-08-23). 80/20 장기 목표 — 2026-08-30 사용자 확인으로 적용
+// (전제조건 미충족 상태로 되돌리려면 { target: 70, lo: 65, hi: 75 }, v3 6쪽).
+const IPS_STOCK = { target: 80, lo: 75, hi: 85 };  // 주식 비중 %, 분모 = 주식+채권(현금 제외)
 const IPS_SINGLE_CAP = 10;                         // 단일 종목 상한 % (v3 연 1회 체크리스트)
 const CLS_KO = { core: "주식 코어", nasdaq: "나스닥", satellite: "위성", bond: "국채", cash: "현금" };
 const OWNER_ORDER = ["MK", "KM"];        // 스냅샷 기입 순서 — 정기 투자하는 민경 계좌 먼저
@@ -1218,7 +1218,7 @@ async function renderAssets() {
       <div class="as-risk"><span>코어 ${iPct(clsSum.core ?? 0).toFixed(1)} · 나스닥 ${iPct(clsSum.nasdaq ?? 0).toFixed(1)} · 위성 ${iPct(clsSum.satellite ?? 0).toFixed(1)}%</span><span>현금 ${fmtNum(clsSum.cash ?? 0)} € 제외</span></div>`
       : `<p class="empty">스냅샷이 쌓이면 여기서 IPS 허용 범위를 점검해요</p>`}
     </div>
-    ${invested > 0 ? `<p class="an-note">두 계좌 합산, 분모는 주식+채권(TR 현금 제외) · 임시 70/30 — 전제조건(KM 보험·공동서명) 충족 시 80/20 · 범위 밖이면 신규 적립 비중부터 조정, 매도는 6개월 뒤에만 검토 (v3 9쪽)</p>` : ""}
+    ${invested > 0 ? `<p class="an-note">두 계좌 합산, 분모는 주식+채권(TR 현금 제외) · 80/20 장기 목표 (v3) · 범위 밖이면 신규 적립 비중부터 조정, 매도는 6개월 뒤에만 검토 (v3 9쪽)</p>` : ""}
 
     <p class="an-sec">평가액 추이</p>
     <p class="ct-label" id="as-label">&nbsp;</p>
