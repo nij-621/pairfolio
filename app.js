@@ -526,6 +526,7 @@ function openEditTx(t) {
   const tripOpts = ['<option value="">여행 없음</option>']
     .concat(trips.map((x) => `<option value="${x.id}" ${x.id === t.trip_id ? "selected" : ""}>${esc(x.name)}</option>`)).join("");
   openModal(`
+    <button class="modal-x" id="e-close" type="button" aria-label="닫기"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
     <h3>거래 수정</h3>
     <div class="row-2">
       <label>날짜<input type="date" id="e-date" value="${t.tx_date}"></label>
@@ -545,6 +546,7 @@ function openEditTx(t) {
       <button class="btn-ghost danger" id="e-del">휴지통</button>
       <button class="btn-primary" id="e-save">저장</button>
     </div>`);
+  $("e-close").onclick = closeModal;
   $("e-save").onclick = async () => {
     const amt = parseFloat($("e-amt").value.replace(/,/g, "."));
     if (!amt || amt <= 0) return toast("금액을 확인하세요");
@@ -693,6 +695,31 @@ async function renderStats() {
 }
 
 // ─────────────────────────────────────────── 반복 규칙 (더보기)
+const CAD_STEP = { monthly: 1, bimonthly: 2, semiannual: 6, yearly: 12 };
+const CAD_KO = { monthly: "매월", bimonthly: "격월", semiannual: "반년", yearly: "매년" };
+// post_due_occurrences와 같은 규칙으로 다음 전기 예정일·회차 계산
+function ruleNextDue(r) {
+  if (r.status !== "active") return null;
+  const step = CAD_STEP[r.cadence];
+  const [sy, sm, sd] = r.start_date.split("-").map(Number);
+  const start = new Date(sy, sm - 1, sd);
+  let end = null;
+  if (r.end_date) { const [ey, em, ed] = r.end_date.split("-").map(Number); end = new Date(ey, em - 1, ed); }
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  let y = sy, m = sm - 1, n = 0;
+  for (let i = 0; i < 400; i++) {
+    const lastDay = new Date(y, m + 1, 0).getDate();
+    const due = new Date(y, m, Math.min(r.day_of_month, lastDay));
+    n++;
+    if (due > today && due >= start) {
+      if (end && due > end) return null;
+      return { due, seq: r.seq_offset + n };
+    }
+    m += step; y += Math.floor(m / 12); m %= 12;
+  }
+  return null;
+}
+
 function renderRules() {
   const wrap = $("rule-list"); wrap.innerHTML = "";
   if (!rules.length) { wrap.innerHTML = `<p class="empty">반복 규칙이 없습니다</p>`; return; }
@@ -700,10 +727,12 @@ function renderRules() {
     const b = document.createElement("button");
     b.className = "card-row" + (r.status !== "active" ? " paused" : "");
     b.type = "button";
-    const cad = { monthly: "매월", bimonthly: "격월", semiannual: "반년", yearly: "매년" }[r.cadence];
     const st = { active: "", paused: " · 일시중지", ended: " · 종료" }[r.status];
+    const nx = ruleNextDue(r);
+    const nxTxt = nx ? ` · 다음 ${nx.due.getMonth() + 1}.${nx.due.getDate()}`
+      : r.status === "active" ? " · 종료일 지남" : "";
     b.innerHTML = `<span class="name">${esc(r.name)}</span>
-      <span class="sub">${cad} ${r.day_of_month}일 · ${fmtEur(r.amount_eur)}${st}</span>`;
+      <span class="sub">${CAD_KO[r.cadence]} ${r.day_of_month}일 · ${fmtEur(r.amount_eur)}${nxTxt}${st}</span>`;
     b.onclick = () => openRuleForm(r);
     wrap.appendChild(b);
   }
@@ -714,71 +743,138 @@ function openRuleForm(r) {
   const isNew = !r;
   r = r ?? {
     name: "", tx_type: "expense", amount_eur: "", day_of_month: 1, cadence: "monthly",
-    start_date: todayStr(), seq_offset: 0, category_id: cats[0]?.id, paid_by: me.member_code,
-    memo_template: "", status: "active",
+    start_date: todayStr(), end_date: null, seq_offset: 0, category_id: cats[0]?.id,
+    paid_by: me.member_code, memo_template: "", status: "active",
   };
   const catOpts = cats.filter((c) => !c.archived)
     .map((c) => `<option value="${c.id}" ${c.id === r.category_id ? "selected" : ""}>${esc(c.name)}</option>`).join("");
-  openModal(`
-    <h3>${isNew ? "반복 규칙 추가" : "반복 규칙 수정"}</h3>
-    <label>이름<input id="r-name" value="${esc(r.name)}" placeholder="예: 스픽 프리미엄 플러스"></label>
-    <div class="row-2">
-      <label>금액 (EUR)<input id="r-amt" inputmode="decimal" value="${r.amount_eur}"></label>
-      <label>결제일<input id="r-day" type="number" min="1" max="31" value="${r.day_of_month}"></label>
-    </div>
-    <div class="row-2">
-      <label>주기<select id="r-cad">
-        <option value="monthly" ${r.cadence === "monthly" ? "selected" : ""}>매월</option>
-        <option value="bimonthly" ${r.cadence === "bimonthly" ? "selected" : ""}>격월</option>
-        <option value="semiannual" ${r.cadence === "semiannual" ? "selected" : ""}>반년</option>
-        <option value="yearly" ${r.cadence === "yearly" ? "selected" : ""}>매년</option>
-      </select></label>
-      <label>시작일<input id="r-start" type="date" value="${r.start_date}"></label>
-    </div>
-    <div class="row-2">
-      <label>카테고리<select id="r-cat">${catOpts}</select></label>
-      <label>결제<select id="r-who">
-        <option value="KM" ${r.paid_by === "KM" ? "selected" : ""}>KM</option>
-        <option value="MK" ${r.paid_by === "MK" ? "selected" : ""}>MK</option>
-      </select></label>
-    </div>
-    <div class="row-2">
-      <label>지난 회차 (엑셀에서 이어받기)<input id="r-seq" type="number" min="0" value="${r.seq_offset}"></label>
-      <label>상태<select id="r-status">
-        <option value="active" ${r.status === "active" ? "selected" : ""}>진행</option>
-        <option value="paused" ${r.status === "paused" ? "selected" : ""}>일시중지</option>
-        <option value="ended" ${r.status === "ended" ? "selected" : ""}>종료</option>
-      </select></label>
-    </div>
-    <label>메모 형식 ({n} = 회차)<input id="r-memo" value="${esc(r.memo_template)}" placeholder="스픽 프리미엄 플러스({n}회),자동이체"></label>
-    <div class="actions">
-      ${isNew ? "" : `<button class="btn-ghost danger" id="r-del">삭제</button>`}
-      <button class="btn-ghost" id="r-cancel">취소</button>
-      <button class="btn-primary" id="r-save">저장</button>
-    </div>`);
+  const cadOpts = Object.entries(CAD_KO)
+    .map(([v, k]) => `<option value="${v}" ${r.cadence === v ? "selected" : ""}>${k}</option>`).join("");
+  const whoOpts = ["KM", "MK"]
+    .map((w) => `<option value="${w}" ${r.paid_by === w ? "selected" : ""}>${w}</option>`).join("");
+  const endLabel = `<label>종료일 (이날까지만 기록, 비우면 계속)<input id="r-endd" type="date" value="${r.end_date ?? ""}"></label>`;
+  const memoLabel = `<label>메모 형식 ({n} = 회차)<input id="r-memo" value="${esc(r.memo_template)}" placeholder="스픽 프리미엄 플러스({n}회),자동이체"></label>`;
+
+  if (isNew) {
+    openModal(`
+      <h3>반복 규칙 추가</h3>
+      <label>이름<input id="r-name" value="" placeholder="예: 스픽 프리미엄 플러스"></label>
+      <div class="row-2">
+        <label>금액 (EUR)<input id="r-amt" inputmode="decimal" value=""></label>
+        <label>결제일<input id="r-day" type="number" min="1" max="31" value="1"></label>
+      </div>
+      <div class="row-2">
+        <label>주기<select id="r-cad">${cadOpts}</select></label>
+        <label>시작일<input id="r-start" type="date" value="${r.start_date}"></label>
+      </div>
+      <div class="row-2">
+        <label>카테고리<select id="r-cat">${catOpts}</select></label>
+        <label>결제<select id="r-who">${whoOpts}</select></label>
+      </div>
+      <label>지난 회차 (엑셀에서 이어받기)<input id="r-seq" type="number" min="0" value="0"></label>
+      ${endLabel}
+      ${memoLabel}
+      <div class="actions">
+        <button class="btn-ghost" id="r-cancel">취소</button>
+        <button class="btn-primary" id="r-save">저장</button>
+      </div>`);
+  } else {
+    const nx = ruleNextDue(r);
+    const usesSeq = r.memo_template === "" || r.memo_template.includes("{n}");
+    const heroTxt =
+      r.status === "paused" ? "일시중지됨 — 재개하면 밀린 회차가 한꺼번에 기록됩니다" :
+      r.status === "ended" ? "종료됨" :
+      nx ? `다음 결제 ${nx.due.getFullYear()}.${nx.due.getMonth() + 1}.${nx.due.getDate()} · ${fmtEur(r.amount_eur)}${usesSeq ? ` · ${nx.seq}회` : ""}${r.end_date ? ` · ${r.end_date}까지` : ""}` :
+      "종료일이 지나 더 기록되지 않습니다";
+    openModal(`
+      <h3>반복 규칙</h3>
+      <div class="rule-hero">
+        <p class="rh-name">${esc(r.name)}</p>
+        <p class="rh-next">${heroTxt}</p>
+      </div>
+      <div class="rule-acts">
+        <button type="button" id="ra-amt">금액 변경</button>
+        <button type="button" id="ra-pause">${r.status === "active" ? "일시중지" : "재개"}</button>
+        ${r.status === "ended" ? "" : `<button type="button" id="ra-end">종료</button>`}
+      </div>
+      <div id="ra-amt-box" hidden>
+        <label>새 금액 (EUR)<input id="r-amt" inputmode="decimal" value="${r.amount_eur}"></label>
+        <p class="fine">다음 회차부터 적용됩니다 — 이미 기록된 거래는 바뀌지 않아요.</p>
+      </div>
+      <details class="rule-adv"><summary>상세 설정</summary>
+        <label>이름<input id="r-name" value="${esc(r.name)}"></label>
+        <div class="row-2">
+          <label>결제일<input id="r-day" type="number" min="1" max="31" value="${r.day_of_month}"></label>
+          <label>주기<select id="r-cad">${cadOpts}</select></label>
+        </div>
+        <div class="row-2">
+          <label>카테고리<select id="r-cat">${catOpts}</select></label>
+          <label>결제<select id="r-who">${whoOpts}</select></label>
+        </div>
+        ${endLabel}
+        ${memoLabel}
+        <p class="fine">시작일 ${r.start_date} · 지난 회차 ${r.seq_offset} — 회차 계산 기준이라 바꿀 수 없어요</p>
+        <button type="button" class="btn-ghost danger adv-del" id="r-del">규칙 삭제</button>
+      </details>
+      <div class="actions">
+        <button class="btn-ghost" id="r-cancel">취소</button>
+        <button class="btn-primary" id="r-save">저장</button>
+      </div>`);
+  }
+
   $("r-cancel").onclick = closeModal;
-  if (!isNew) $("r-del").onclick = async () => {
-    if (!confirm(`"${r.name}" 규칙을 삭제할까요?`)) return;
-    const { error } = await sb.from("recurring_rules").delete().eq("id", r.id);
-    if (error) return toast("이미 기록된 거래가 있는 규칙은 삭제할 수 없어요 — 상태를 '종료'로 바꾸세요", 3600);
-    closeModal(); await loadRefs(); renderRules(); toast("삭제됨");
-  };
+
+  async function setStatus(status, msg) {
+    const { error } = await sb.from("recurring_rules").update({ status }).eq("id", r.id);
+    if (error) return toast("실패: " + error.message);
+    closeModal(); await loadRefs(); renderRules(); toast(msg);
+    if (status === "active") postRecurring();
+  }
+  if (!isNew) {
+    $("ra-amt").onclick = () => {
+      const box = $("ra-amt-box");
+      box.hidden = !box.hidden;
+      if (!box.hidden) $("r-amt").focus();
+    };
+    $("ra-pause").onclick = () => {
+      if (r.status === "active") return setStatus("paused", "일시중지됨");
+      if (!confirm("재개하면 멈춘 동안 밀린 회차가 한꺼번에 기록됩니다. 재개할까요?")) return;
+      setStatus("active", "재개됨");
+    };
+    const endBtn = $("ra-end");
+    if (endBtn) endBtn.onclick = () => {
+      if (!confirm(`"${r.name}" 규칙을 종료할까요? 이후 자동 기록이 멈춥니다.`)) return;
+      setStatus("ended", "종료됨");
+    };
+    $("r-del").onclick = async () => {
+      if (!confirm(`"${r.name}" 규칙을 삭제할까요?`)) return;
+      const { error } = await sb.from("recurring_rules").delete().eq("id", r.id);
+      if (error) return toast("이미 기록된 거래가 있는 규칙은 삭제할 수 없어요 — 대신 '종료'하세요", 3600);
+      closeModal(); await loadRefs(); renderRules(); toast("삭제됨");
+    };
+  }
+
   $("r-save").onclick = async () => {
     const row = {
       name: $("r-name").value.trim(),
       amount_eur: parseFloat($("r-amt").value.replace(/,/g, ".")),
       day_of_month: parseInt($("r-day").value, 10),
       cadence: $("r-cad").value,
-      start_date: $("r-start").value,
-      seq_offset: parseInt($("r-seq").value, 10) || 0,
+      end_date: $("r-endd").value || null,
       category_id: $("r-cat").value,
       paid_by: $("r-who").value,
       memo_template: $("r-memo").value.trim(),
-      status: $("r-status").value,
       tx_type: cats.find((c) => c.id === $("r-cat").value)?.kind === "income" ? "income"
         : (!isNew && r.tx_type === "transfer") ? "transfer" : "expense",
     };
+    if (isNew) {
+      row.start_date = $("r-start").value;
+      row.seq_offset = parseInt($("r-seq").value, 10) || 0;
+      row.status = "active";
+    }
     if (!row.name || !row.amount_eur || !row.day_of_month) return toast("이름·금액·결제일은 필수예요");
+    const startDate = isNew ? row.start_date : r.start_date;
+    if (row.end_date && row.end_date < startDate) return toast("종료일이 시작일보다 빠를 수 없어요");
     const q = isNew ? sb.from("recurring_rules").insert(row)
                     : sb.from("recurring_rules").update(row).eq("id", r.id);
     const { error } = await q;

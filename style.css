@@ -283,6 +283,33 @@ h2 { font-size: .92rem; font-weight: 800; margin: 24px 0 8px; }
 #modal input, #modal select {
   display: block; width: 100%; margin-top: 5px; padding: 11px 12px;
   border: 1px solid var(--card-line); border-radius: 10px; background: var(--card);
+  min-height: 45px;
+}
+/* iOS: date 입력의 UA 스타일 때문에 옆 입력과 높이·정렬이 어긋남 */
+#modal input[type="date"] { -webkit-appearance: none; appearance: none; }
+#modal input[type="date"]::-webkit-date-and-time-value { text-align: left; }
+/* 반복 규칙 상세 */
+.rule-hero {
+  background: var(--card); border: 1px solid var(--card-line); border-radius: 12px;
+  padding: 14px;
+}
+.rule-hero .rh-name { font-weight: 800; font-size: .95rem; }
+.rule-hero .rh-next { font-size: .8rem; font-weight: 700; color: var(--ink-2); margin-top: 4px; font-variant-numeric: tabular-nums; }
+.rule-acts { display: flex; gap: 8px; margin-top: 10px; }
+.rule-acts button {
+  flex: 1; padding: 11px 0; border: 1px solid var(--card-line); border-radius: 10px;
+  background: var(--card); font-size: .8rem; font-weight: 800;
+}
+#ra-amt-box { margin-top: 4px; }
+#ra-amt-box .fine { margin-top: 8px; }
+.rule-adv { margin-top: 16px; }
+.rule-adv summary { font-size: .78rem; font-weight: 800; color: var(--ink-2); cursor: pointer; padding: 4px 0; }
+.rule-adv .fine { margin-top: 14px; }
+#modal .rule-adv .adv-del { display: block; width: 100%; margin-top: 12px; padding: 11px; border-radius: 10px; }
+#modal .modal-x {
+  position: absolute; top: 14px; right: 14px;
+  width: 34px; height: 34px; display: grid; place-items: center;
+  background: transparent; border: 0; border-radius: 8px; color: var(--ink-2);
 }
 #modal .row-2 { margin-top: 0; }
 #modal .danger { color: var(--danger); border-color: #ecc8c5; }
