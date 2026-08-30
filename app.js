@@ -1134,9 +1134,10 @@ document.addEventListener("touchend", (e) => {
   const dy = e.changedTouches[0].clientY - swipeStart.y;
   swipeStart = null;
   if (Math.abs(dx) < 60 || Math.abs(dy) > 50) return;        // 수평으로 충분히 밀었을 때만
-  const cur = document.querySelector("#tabbar button.on")?.dataset.tab;
-  if (cur === "add" && dx < 0) document.querySelector('#tabbar button[data-tab="list"]').click();
-  else if (cur === "list" && dx > 0) document.querySelector('#tabbar button[data-tab="add"]').click();
+  const order = ["add", "list", "stats", "more"];
+  const i = order.indexOf(document.querySelector("#tabbar button.on")?.dataset.tab);
+  const next = order[i + (dx < 0 ? 1 : -1)];
+  if (i >= 0 && next) document.querySelector(`#tabbar button[data-tab="${next}"]`).click();
 }, { passive: true });
 
 // ─────────────────────────────────────────── PWA
