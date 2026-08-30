@@ -1089,15 +1089,11 @@ function openTripForm(t) {
 }
 
 // ─────────────────────────────────────────── 자산 탭 (4단계 축소판 — 자동 시세 없음)
-// 공식 기록은 월 1회 손 스냅샷뿐. IPS 목표·허용 범위는 앱 상수(IPS 변경은 연 1회 서면 절차).
-const IPS_BANDS = [
-  { cls: "core",      name: "글로벌 주식 코어", target: 54,   lo: 49,   hi: 59 },
-  { cls: "nasdaq",    name: "나스닥 100",       target: 6,    lo: null, hi: 6.5 },
-  { cls: "satellite", name: "위성 (개별주)",    target: null, lo: null, hi: 5 },
-  { cls: "bond",      name: "국채 EUR 헤지",    target: 35,   lo: 30,   hi: 40 },
-];
-const IPS_RISK_CAP = 65;                 // 위험자산(코어+나스닥+위성) 상한 %
-const BAND_SCALE = 70;                   // 비중 트랙 가로축 = 0~70%
+// 공식 기록은 월 1회 손 스냅샷뿐. IPS 목표·허용 범위는 앱 상수(IPS 변경은 서면 절차).
+// 기준: 통합 확정안 v3 (2026-08-23). 전제조건(① KM 소득상실보험 ② KM IPS 공동서명) 충족
+// 전에는 임시 70/30 — 충족되면 아래를 { target: 80, lo: 75, hi: 85 }로 수정 (v3 6쪽).
+const IPS_STOCK = { target: 70, lo: 65, hi: 75 };  // 주식 비중 %, 분모 = 주식+채권(현금 제외)
+const IPS_SINGLE_CAP = 10;                         // 단일 종목 상한 % (v3 연 1회 체크리스트)
 const CLS_KO = { core: "주식 코어", nasdaq: "나스닥", satellite: "위성", bond: "국채", cash: "현금" };
 const OWNER_ORDER = ["MK", "KM"];        // 스냅샷 기입 순서 — 정기 투자하는 민경 계좌 먼저
 
@@ -1151,28 +1147,38 @@ async function renderAssets() {
   // 마지막 스냅샷 달 기준 자산군 합계 (비중·종목 리스트의 단일 기준 시점)
   const clsSum = {};
   let total = 0;
+  let maxSat = null;   // 단일 종목 점검 — 위성 종목 중 최대
   if (lastYm) for (const s of snaps.filter((x) => x.ym === lastYm)) {
     const h = holdingOf(s.holding_id); if (!h) continue;
     clsSum[h.asset_class] = (clsSum[h.asset_class] ?? 0) + Number(s.value_eur);
     total += Number(s.value_eur);
+    if (h.asset_class === "satellite" && (!maxSat || Number(s.value_eur) > maxSat.v))
+      maxSat = { name: h.name, v: Number(s.value_eur) };
   }
-  const pctOf = (cls) => (total > 0 ? ((clsSum[cls] ?? 0) / total) * 100 : 0);
-  const risk = pctOf("core") + pctOf("nasdaq") + pctOf("satellite");
+  // v3: 비중 분모 = 주식+채권 — TR 현금은 비상금·유보금이라 제외 (v3 5쪽)
+  const equity = (clsSum.core ?? 0) + (clsSum.nasdaq ?? 0) + (clsSum.satellite ?? 0);
+  const invested = equity + (clsSum.bond ?? 0);
+  const stockPct = invested > 0 ? (equity / invested) * 100 : 0;
+  const iPct = (v) => (invested > 0 ? (v / invested) * 100 : 0);
 
-  const bandRows = IPS_BANDS.map((b) => {
-    const p = pctOf(b.cls);
-    const over = total > 0 && ((b.hi != null && p > b.hi) || (b.lo != null && p < b.lo));
-    const zoneL = ((b.lo ?? 0) / BAND_SCALE) * 100;
-    const zoneR = 100 - (Math.min(b.hi, BAND_SCALE) / BAND_SCALE) * 100;
-    const tick = (Math.min(p, BAND_SCALE) / BAND_SCALE) * 100;
-    const rangeTxt = b.lo != null ? `목표 ${b.target} · ${b.lo}~${b.hi}` : `상한 ${b.hi}`;
+  const bandRow = (name, pct, lo, hi, rangeTxt) => {
+    const over = (hi != null && pct > hi) || (lo != null && pct < lo);
+    const tick = Math.min(pct, 100);
     return `
       <div class="band">
-        <div class="r1"><span class="n">${b.name}</span>
-          <span class="v ${over ? "over" : ""}">${p.toFixed(1)}%<small>${rangeTxt}</small></span></div>
-        <div class="band-track"><span class="zone" style="left:${zoneL}%;right:${zoneR}%"></span><span class="tick ${over ? "over" : ""}" style="left:${tick.toFixed(1)}%"></span></div>
+        <div class="r1"><span class="n">${name}</span>
+          <span class="v ${over ? "over" : ""}">${pct.toFixed(1)}%<small>${rangeTxt}</small></span></div>
+        <div class="band-track"><span class="zone" style="left:${lo ?? 0}%;right:${100 - hi}%"></span><span class="tick ${over ? "over" : ""}" style="left:${tick.toFixed(1)}%"></span></div>
       </div>`;
-  }).join("");
+  };
+  const bandRows = invested > 0 ? [
+    bandRow("주식 (코어·나스닥·위성)", stockPct, IPS_STOCK.lo, IPS_STOCK.hi,
+      `목표 ${IPS_STOCK.target} · ${IPS_STOCK.lo}~${IPS_STOCK.hi}`),
+    bandRow("채권 (EUR 헤지)", 100 - stockPct, 100 - IPS_STOCK.hi, 100 - IPS_STOCK.lo,
+      `목표 ${100 - IPS_STOCK.target} · ${100 - IPS_STOCK.hi}~${100 - IPS_STOCK.lo}`),
+    maxSat ? bandRow("최대 단일 종목", iPct(maxSat.v), null, IPS_SINGLE_CAP,
+      `${esc(maxSat.name)} · 상한 ${IPS_SINGLE_CAP}`) : "",
+  ].join("") : "";
 
   const [cy, cm] = curYm.split("-");
   const nudge = lastYm !== curYm
@@ -1206,13 +1212,13 @@ async function renderAssets() {
     </div>
     ${nudge}
 
-    <p class="an-sec">IPS 비중 점검</p>
+    <p class="an-sec">IPS 비중 점검 — v3 확정안</p>
     <div class="sheet" style="padding:12px 14px">
-      ${total > 0 ? bandRows + `
-      <div class="as-risk ${risk > IPS_RISK_CAP ? "over" : ""}"><span>위험자산 합계</span><span>${risk.toFixed(1)}% / 상한 ${IPS_RISK_CAP}%</span></div>`
+      ${invested > 0 ? bandRows + `
+      <div class="as-risk"><span>코어 ${iPct(clsSum.core ?? 0).toFixed(1)} · 나스닥 ${iPct(clsSum.nasdaq ?? 0).toFixed(1)} · 위성 ${iPct(clsSum.satellite ?? 0).toFixed(1)}%</span><span>현금 ${fmtNum(clsSum.cash ?? 0)} € 제외</span></div>`
       : `<p class="empty">스냅샷이 쌓이면 여기서 IPS 허용 범위를 점검해요</p>`}
     </div>
-    ${total > 0 ? `<p class="an-note">비중은 두 계좌 합산 기준 · 범위 밖이면 신규 자금으로 우선 조정, 매도는 최후 수단 (IPS 6장)</p>` : ""}
+    ${invested > 0 ? `<p class="an-note">두 계좌 합산, 분모는 주식+채권(TR 현금 제외) · 임시 70/30 — 전제조건(KM 보험·공동서명) 충족 시 80/20 · 범위 밖이면 신규 적립 비중부터 조정, 매도는 6개월 뒤에만 검토 (v3 9쪽)</p>` : ""}
 
     <p class="an-sec">평가액 추이</p>
     <p class="ct-label" id="as-label">&nbsp;</p>
