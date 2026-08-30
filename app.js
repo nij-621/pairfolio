@@ -1228,6 +1228,7 @@ async function renderAssets() {
 
     <div class="section-head" style="margin-top:22px"><h2 style="margin:0">TR 이자 · 올해 ${fmtNum(yearSum)} €</h2><button type="button" class="btn-ghost" id="as-int-new">+ 기입</button></div>
     <div class="sheet">${intRows || `<p class="empty">기록 없음</p>`}</div>
+    ${trInterest.length > 4 ? `<button type="button" class="btn-ghost as-ghost" id="as-int-all">전체 보기 (${trInterest.length}건)</button>` : ""}
     <p class="an-note">가계 수입에 합산되지 않아요 — 저축률 계산과 분리 (투자 수익)</p>
 
     <div class="section-head" style="margin-top:22px"><h2 style="margin:0">보유 종목</h2><button type="button" class="btn-ghost" id="as-hold-new">+ 추가</button></div>
@@ -1237,6 +1238,8 @@ async function renderAssets() {
   if (ymList.length) drawAssetChart(ymList, byYm);
   $("as-snap-new").onclick = () => openSnapshotForm(curYm);
   $("as-int-new").onclick = () => openInterestForm(null);
+  const intAll = $("as-int-all");
+  if (intAll) intAll.onclick = openInterestList;
   $("as-hold-new").onclick = () => openHoldingForm(null);
   body.querySelectorAll("[data-int]").forEach((b) =>
     b.onclick = () => openInterestForm(trInterest.find((t) => t.id === b.dataset.int)));
@@ -1368,6 +1371,45 @@ function openSnapshotForm(ym) {
     if (error) return toast("저장 실패: " + error.message);
     closeModal(); renderAssets(); toast(`${Number(ym.slice(5))}월 스냅샷 기록됨`);
   };
+}
+
+// ── TR 이자 전체 보기 (연도별 그룹 + 연 합계) ──
+async function openInterestList() {
+  openModal(`<h3>TR 이자 전체</h3><div id="il-body"><p class="empty">불러오는 중…</p></div>`);
+  const { data, error } = await sb.from("tr_interest").select("*")
+    .is("deleted_at", null).order("int_date", { ascending: false });
+  if (!$("il-body")) return; // 로딩 중 모달이 닫힘
+  if (error) { $("il-body").innerHTML = `<p class="empty">불러오기 실패</p>`; return; }
+  if (!data.length) { $("il-body").innerHTML = `<p class="empty">기록 없음</p>`; return; }
+  const yearSum = {};
+  for (const t of data) {
+    const y = t.int_date.slice(0, 4);
+    yearSum[y] = (yearSum[y] ?? 0) + Number(t.amount_eur);
+  }
+  const wrap = $("il-body"); wrap.innerHTML = "";
+  let curY = "", sheet = null;
+  for (const t of data) {
+    const y = t.int_date.slice(0, 4);
+    if (y !== curY) {
+      curY = y;
+      const h = document.createElement("p");
+      h.className = "search-head";
+      h.textContent = `${y}년 · ${fmtNum(yearSum[y])} €`;
+      wrap.appendChild(h);
+      sheet = document.createElement("div");
+      sheet.className = "sheet";
+      wrap.appendChild(sheet);
+    }
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "lrow";
+    b.innerHTML =
+      `<span class="d">${Number(t.int_date.slice(5, 7))}.${t.int_date.slice(8, 10)}</span>` +
+      `<span class="own-dot ${t.owner.toLowerCase()}"></span>` +
+      `<span class="memo">${esc(t.memo || "현금 이자")}</span>` +
+      `<span class="amt income">${fmtNum(t.amount_eur)}</span>`;
+    b.onclick = () => openInterestForm(t);
+    sheet.appendChild(b);
+  }
 }
 
 // ── TR 이자 기입 ──
