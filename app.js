@@ -20,10 +20,20 @@ function toast(msg, ms = 2200) {
   clearTimeout(t._h); t._h = setTimeout(() => (t.hidden = true), ms);
 }
 function openModal(html) {
-  $("modal").innerHTML = html;
+  $("modal").innerHTML =
+    `<button class="modal-x" type="button" aria-label="닫기"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>` + html;
+  $("modal").querySelector(".modal-x").onclick = closeModal;
   $("modal-wrap").hidden = false;
 }
 function closeModal() { $("modal-wrap").hidden = true; $("modal").innerHTML = ""; }
+// textarea 높이를 내용에 맞춰 자동 조절
+function autoGrow(el) {
+  if (!el) return () => {};
+  const fit = () => { el.style.height = "auto"; el.style.height = el.scrollHeight + 2 + "px"; };
+  el.addEventListener("input", fit);
+  requestAnimationFrame(fit); // 모달이 첫 프레임에 그려진 뒤 측정해야 정확함
+  return fit;
+}
 $("modal-back")?.addEventListener("click", closeModal);
 document.addEventListener("click", (e) => { if (e.target.id === "modal-back") closeModal(); });
 
@@ -525,15 +535,15 @@ function openEditTx(t) {
     .map((c) => `<option value="${c.id}" ${c.id === t.category_id ? "selected" : ""}>${esc(c.name)}</option>`).join("");
   const tripOpts = ['<option value="">여행 없음</option>']
     .concat(trips.map((x) => `<option value="${x.id}" ${x.id === t.trip_id ? "selected" : ""}>${esc(x.name)}</option>`)).join("");
+  const rule = t.rule_id ? rules.find((x) => x.id === t.rule_id) : null;
   openModal(`
-    <button class="modal-x" id="e-close" type="button" aria-label="닫기"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
     <h3>거래 수정</h3>
     <div class="row-2">
       <label>날짜<input type="date" id="e-date" value="${t.tx_date}"></label>
       <label>금액 (EUR)<input type="text" inputmode="decimal" id="e-amt" value="${t.amount_eur}"></label>
     </div>
     <label>카테고리<select id="e-cat">${catOpts}</select></label>
-    <label>메모<input type="text" id="e-memo" value="${esc(t.memo)}"></label>
+    <label>메모<textarea id="e-memo" rows="1">${esc(t.memo)}</textarea></label>
     <div class="row-2">
       <label>결제<select id="e-who">
         <option value="KM" ${t.paid_by === "KM" ? "selected" : ""}>KM</option>
@@ -542,11 +552,13 @@ function openEditTx(t) {
       <label>여행<select id="e-trip">${tripOpts}</select></label>
     </div>
     ${t.orig_currency === "KRW" ? `<p class="fx-note">원화 ${Number(t.orig_amount).toLocaleString()}₩ · 환율 ${t.fx_rate} (${t.fx_rate_date})</p>` : ""}
+    ${rule ? `<button type="button" class="rule-link" id="e-rule"><span>반복 규칙 「${esc(rule.name)}」에서 자동 기록됨</span><span class="car">규칙 열기 ›</span></button>` : ""}
     <div class="actions">
       <button class="btn-ghost danger" id="e-del">휴지통</button>
       <button class="btn-primary" id="e-save">저장</button>
     </div>`);
-  $("e-close").onclick = closeModal;
+  if (rule) $("e-rule").onclick = () => openRuleForm(rule);
+  autoGrow($("e-memo"));
   $("e-save").onclick = async () => {
     const amt = parseFloat($("e-amt").value.replace(/,/g, "."));
     if (!amt || amt <= 0) return toast("금액을 확인하세요");
@@ -674,11 +686,11 @@ async function renderStats() {
     <p class="an-sec">카테고리별 지출 · 직전 3개월 평균 대비</p>
     <div class="cat-bars">
       ${rows.length ? rows.map(([cid, v]) => `
-        <div class="cbar">
+        <button type="button" class="cbar" data-cat="${cid}">
           <span class="n">${esc(catName(cid))}</span>
           <span class="track" style="width:${Math.max(2, Math.round((v / maxV) * 100))}%"></span>
           <span class="val">${fmtNum(v)}<small>${deltaTxt(v, prevAvg[cid])}</small></span>
-        </div>`).join("") : `<p class="empty">이 달 지출이 없습니다</p>`}
+        </button>`).join("") : `<p class="empty">이 달 지출이 없습니다</p>`}
     </div>
 
     <p class="an-sec">누가 결제했나</p>
@@ -692,6 +704,124 @@ async function renderStats() {
       <div class="an-tile"><p class="t">월 환산 합계</p><p class="v">${fmtNum(subTotal)} €</p></div>
       <div class="an-tile"><p class="t">활성 규칙</p><p class="v">${subRules.length}건</p></div>
     </div>`;
+  $("an-body").querySelectorAll(".cbar[data-cat]").forEach((b) =>
+    b.onclick = () => openCatTrend(b.dataset.cat));
+}
+
+// ── 카테고리 추이 (팝업 꺾은선) ──
+function ymAdd(ym, d) {
+  const [y, m] = ym.split("-").map(Number);
+  return new Date(y, m - 1 + d, 1).toLocaleDateString("sv-SE").slice(0, 7);
+}
+async function fetchCatMonthly(catId) {
+  const byMonth = {}; let first = null;
+  for (let page = 0; ; page++) {   // Supabase 1,000행 제한 대비 페이지 순회
+    const { data, error } = await sb.from("transactions")
+      .select("tx_date, amount_eur")
+      .eq("category_id", catId).is("deleted_at", null)
+      .order("tx_date", { ascending: true })
+      .range(page * 1000, page * 1000 + 999);
+    if (error) throw error;
+    for (const t of data) {
+      const k = t.tx_date.slice(0, 7);
+      byMonth[k] = (byMonth[k] ?? 0) + Number(t.amount_eur);
+      first = first ?? k;
+    }
+    if (data.length < 1000) break;
+  }
+  return { byMonth, first };
+}
+const fmtShort = (v) => Math.round(v).toLocaleString("de-AT");
+
+async function openCatTrend(catId) {
+  openModal(`
+    <h3>${esc(catName(catId))} 추이</h3>
+    <div class="trend-seg" id="ct-seg">
+      <button type="button" data-m="12m" class="on">12개월</button>
+      <button type="button" data-m="3y">3년</button>
+      <button type="button" data-m="all">전체</button>
+      <button type="button" data-m="year">연도별</button>
+    </div>
+    <p class="ct-label" id="ct-label">&nbsp;</p>
+    <div id="ct-chart"><p class="empty">불러오는 중…</p></div>`);
+  let res;
+  try { res = await fetchCatMonthly(catId); }
+  catch { if ($("ct-chart")) $("ct-chart").innerHTML = `<p class="empty">불러오기 실패</p>`; return; }
+  if (!$("ct-chart")) return; // 로딩 중 모달이 닫힘
+  const { byMonth, first } = res;
+  if (!first) { $("ct-chart").innerHTML = `<p class="empty">기록이 없습니다</p>`; return; }
+
+  let mode = "12m";
+  const draw = () => {
+    const cur = todayStr().slice(0, 7);
+    let keys, vals, labelOf;
+    if (mode === "year") {
+      keys = [];
+      for (let y = Number(first.slice(0, 4)); y <= Number(cur.slice(0, 4)); y++) keys.push(String(y));
+      vals = keys.map((y) => Object.entries(byMonth).reduce((s, [k, v]) => k.startsWith(y) ? s + v : s, 0));
+      labelOf = (i) => `${keys[i]}년 · ${fmtEur(vals[i])}`;
+    } else {
+      const from = mode === "12m" ? ymAdd(cur, -11) : mode === "3y" ? ymAdd(cur, -35) : first;
+      keys = []; let k = from;
+      while (k <= cur) { keys.push(k); k = ymAdd(k, 1); }
+      vals = keys.map((k2) => byMonth[k2] ?? 0);
+      labelOf = (i) => `${keys[i].slice(0, 4)}년 ${Number(keys[i].slice(5))}월 · ${fmtEur(vals[i])}`;
+    }
+    const W = 340, H = 180, L = 6, R = 6, T = 16, B = 20;
+    const n = vals.length;
+    const max = Math.max(...vals, 1);
+    const avg = vals.reduce((s, v) => s + v, 0) / n;
+    const x = (i) => n === 1 ? W / 2 : L + (i * (W - L - R)) / (n - 1);
+    const y = (v) => T + (1 - v / max) * (H - T - B);
+
+    const line = vals.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(" ");
+    const area = `${line} L${x(n - 1).toFixed(1)} ${H - B} L${x(0).toFixed(1)} ${H - B} Z`;
+    // x축 라벨: 12개월은 3개월마다, 월 모드는 1월마다(기간 길면 짝수 해만), 연도별은 해마다
+    const yearsSpan = Number(cur.slice(0, 4)) - Number((mode === "year" ? keys[0] : keys[0].slice(0, 4)));
+    const ticks = keys.map((k2, i) => {
+      let txt = null;
+      if (mode === "12m") { if (i % 3 === 0) txt = `${Number(k2.slice(5))}월`; }
+      else if (mode === "year") { if (yearsSpan <= 8 || Number(k2) % 2 === 0) txt = `'${k2.slice(2)}`; }
+      else if (k2.slice(5) === "01" && (yearsSpan <= 6 || Number(k2.slice(0, 4)) % 2 === 0)) txt = `'${k2.slice(2, 4)}`;
+      return txt === null ? "" : `<text x="${x(i).toFixed(1)}" y="${H - 6}" text-anchor="middle" font-size="9" fill="var(--ink-2)">${txt}</text>`;
+    }).join("");
+    const step = n === 1 ? W : (W - L - R) / (n - 1);
+    const hits = vals.map((v, i) =>
+      `<rect data-i="${i}" x="${(x(i) - step / 2).toFixed(1)}" y="0" width="${step.toFixed(1)}" height="${H}" fill="transparent"/>`).join("");
+    const dots = n <= 40
+      ? vals.map((v, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="2.6" fill="var(--ink)"/>`).join("")
+      : "";
+
+    $("ct-chart").innerHTML = `
+      <svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
+        <text x="${L}" y="10" font-size="9" fill="var(--ink-2)">${fmtShort(max)} €</text>
+        <line x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}" stroke="var(--card-line)"/>
+        <path d="${area}" fill="rgba(38,38,32,.07)"/>
+        <line x1="${L}" y1="${y(avg).toFixed(1)}" x2="${W - R}" y2="${y(avg).toFixed(1)}" stroke="var(--ink-2)" stroke-dasharray="4 4" stroke-width="1"/>
+        <text x="${W - R}" y="${(y(avg) - 4).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--ink-2)">평균 ${fmtShort(avg)}</text>
+        <path d="${line}" fill="none" stroke="var(--ink)" stroke-width="1.8" stroke-linejoin="round"/>
+        ${dots}
+        <circle id="ct-dot" r="4.2" fill="var(--paper)" stroke="var(--ink)" stroke-width="2" visibility="hidden"/>
+        ${hits}
+        ${ticks}
+      </svg>`;
+    const dot = $("ct-dot");
+    const select = (i) => {
+      dot.setAttribute("visibility", "visible");
+      dot.setAttribute("cx", x(i).toFixed(1));
+      dot.setAttribute("cy", y(vals[i]).toFixed(1));
+      $("ct-label").textContent = labelOf(i);
+    };
+    $("ct-chart").querySelectorAll("rect[data-i]").forEach((rc) =>
+      rc.onclick = () => select(Number(rc.dataset.i)));
+    select(n - 1);
+  };
+  $("ct-seg").querySelectorAll("button").forEach((b) => b.onclick = () => {
+    mode = b.dataset.m;
+    $("ct-seg").querySelectorAll("button").forEach((s) => s.classList.toggle("on", s === b));
+    draw();
+  });
+  draw();
 }
 
 // ─────────────────────────────────────────── 반복 규칙 (더보기)
@@ -753,7 +883,7 @@ function openRuleForm(r) {
   const whoOpts = ["KM", "MK"]
     .map((w) => `<option value="${w}" ${r.paid_by === w ? "selected" : ""}>${w}</option>`).join("");
   const endLabel = `<label>종료일 (이날까지만 기록, 비우면 계속)<input id="r-endd" type="date" value="${r.end_date ?? ""}"></label>`;
-  const memoLabel = `<label>메모 형식 ({n} = 회차)<input id="r-memo" value="${esc(r.memo_template)}" placeholder="스픽 프리미엄 플러스({n}회),자동이체"></label>`;
+  const memoLabel = `<label>메모 형식 ({n} = 회차)<textarea id="r-memo" rows="1" placeholder="스픽 프리미엄 플러스({n}회),자동이체">${esc(r.memo_template)}</textarea></label>`;
 
   if (isNew) {
     openModal(`
@@ -823,6 +953,8 @@ function openRuleForm(r) {
   }
 
   $("r-cancel").onclick = closeModal;
+  const fitMemo = autoGrow($("r-memo"));
+  $("modal").querySelector(".rule-adv")?.addEventListener("toggle", fitMemo);
 
   async function setStatus(status, msg) {
     const { error } = await sb.from("recurring_rules").update({ status }).eq("id", r.id);
@@ -987,6 +1119,25 @@ document.querySelectorAll("#tabbar button").forEach((b) => {
     if (b.dataset.tab === "more") loadRefs().then(() => { renderRules(); renderMore(); });
   });
 });
+
+// 스와이프로 입력 ↔ 내역 전환
+let swipeStart = null;
+document.addEventListener("touchstart", (e) => {
+  swipeStart = null;
+  if (!$("modal-wrap").hidden) return;                       // 모달 열려 있으면 무시
+  if (e.target.closest("input, textarea, select")) return;   // 입력 중 텍스트 드래그 무시
+  swipeStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+}, { passive: true });
+document.addEventListener("touchend", (e) => {
+  if (!swipeStart) return;
+  const dx = e.changedTouches[0].clientX - swipeStart.x;
+  const dy = e.changedTouches[0].clientY - swipeStart.y;
+  swipeStart = null;
+  if (Math.abs(dx) < 60 || Math.abs(dy) > 50) return;        // 수평으로 충분히 밀었을 때만
+  const cur = document.querySelector("#tabbar button.on")?.dataset.tab;
+  if (cur === "add" && dx < 0) document.querySelector('#tabbar button[data-tab="list"]').click();
+  else if (cur === "list" && dx > 0) document.querySelector('#tabbar button[data-tab="add"]').click();
+}, { passive: true });
 
 // ─────────────────────────────────────────── PWA
 if ("serviceWorker" in navigator && location.protocol === "https:") {
