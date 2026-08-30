@@ -744,7 +744,7 @@ async function openCatTrend(catId) {
     </div>
     <p class="ct-label" id="ct-label">&nbsp;</p>
     <div id="ct-chart"><p class="empty">불러오는 중…</p></div>
-    <p class="fine" style="margin-top:10px">최대 = 이 기간에서 가장 컸던 달의 금액(그래프 세로축 천장) · 점선 = 기간 전체의 월평균. 연도별 보기는 해 단위 합계이며 연평균 옆에 월 환산을 함께 보여줘요. 점을 누르면 그 달(해) 금액이 위에 표시돼요.</p>`);
+    <p class="fine" style="margin-top:10px">최대 = 이 기간에서 가장 컸던 달(연도별은 해)의 금액, 그래프 세로축의 천장 · 점선 = 이 기간의 월평균. 점을 누르면 그 달(해) 금액이 위에 표시돼요.</p>`);
   let res;
   try { res = await fetchCatMonthly(catId); }
   catch { if ($("ct-chart")) $("ct-chart").innerHTML = `<p class="empty">불러오기 실패</p>`; return; }
@@ -777,7 +777,6 @@ async function openCatTrend(catId) {
     const W = 340, H = 180, L = 6, R = 6, T = 16, B = 20;
     const n = vals.length;
     const max = Math.max(...vals, 1);
-    const avg = vals.reduce((s, v) => s + v, 0) / n;
     const x = (i) => n === 1 ? W / 2 : L + (i * (W - L - R)) / (n - 1);
     const y = (v) => T + (1 - v / max) * (H - T - B);
 
@@ -801,27 +800,27 @@ async function openCatTrend(catId) {
 
     // 라벨은 종이색 테두리(halo)로 그래프 선 위에서도 읽히게, 평균선이 위쪽이면 라벨을 선 아래로
     const halo = `paint-order="stroke" stroke="var(--paper)" stroke-width="3.5" stroke-linejoin="round" pointer-events="none"`;
-    const avgY = y(avg);
-    const avgLabelY = avgY < 34 ? avgY + 13 : avgY - 5;
-    let avgLabel = `월평균 ${fmtShort(avg)} €`;
-    if (mode === "year") {
-      // 월 환산 = 전체 합 ÷ 전체 개월 수 (부분 연도 왜곡 없음)
-      const totalMonths = (Number(cur.slice(0, 4)) - Number(first.slice(0, 4))) * 12
-        + Number(cur.slice(5)) - Number(first.slice(5)) + 1;
-      avgLabel = `연평균 ${fmtShort(avg)} · 월 ${fmtShort(vals.reduce((s, v) => s + v, 0) / totalMonths)} €`;
+    // 월평균 점선 — 연도별 보기에선 표시하지 않음 (기간 전체 평균은 불필요, 점 탭 정보로 충분)
+    let avgSvg = "";
+    if (mode !== "year") {
+      const avg = vals.reduce((s, v) => s + v, 0) / n;
+      const avgY = y(avg);
+      const avgLabelY = avgY < 34 ? avgY + 13 : avgY - 5;
+      avgSvg = `
+        <line x1="${L}" y1="${avgY.toFixed(1)}" x2="${W - R}" y2="${avgY.toFixed(1)}" stroke="var(--ink-2)" stroke-dasharray="4 4" stroke-width="1"/>
+        <text x="${W - R}" y="${avgLabelY.toFixed(1)}" text-anchor="end" font-size="9" fill="var(--ink-2)" ${halo}>월평균 ${fmtShort(avg)} €</text>`;
     }
     $("ct-chart").innerHTML = `
       <svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
         <line x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}" stroke="var(--card-line)"/>
         <path d="${area}" fill="rgba(38,38,32,.07)"/>
-        <line x1="${L}" y1="${avgY.toFixed(1)}" x2="${W - R}" y2="${avgY.toFixed(1)}" stroke="var(--ink-2)" stroke-dasharray="4 4" stroke-width="1"/>
         <path d="${line}" fill="none" stroke="var(--ink)" stroke-width="1.8" stroke-linejoin="round"/>
         ${dots}
         <circle id="ct-dot" r="4.2" fill="var(--paper)" stroke="var(--ink)" stroke-width="2" visibility="hidden"/>
         ${hits}
         ${ticks}
         <text x="${L}" y="10" font-size="9" fill="var(--ink-2)" ${halo}>최대 ${fmtShort(max)} €</text>
-        <text x="${W - R}" y="${avgLabelY.toFixed(1)}" text-anchor="end" font-size="9" fill="var(--ink-2)" ${halo}>${avgLabel}</text>
+        ${avgSvg}
       </svg>`;
     const dot = $("ct-dot");
     const select = (i) => {
