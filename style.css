@@ -215,6 +215,9 @@ h2 { font-size: .92rem; font-weight: 800; margin: 24px 0 8px; }
 .cbar .track { height: 14px; border-radius: 0 4px 4px 0; background: #9a8f66; min-width: 2px; }
 .cbar .val { font-size: .76rem; font-weight: 800; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
 .cbar .val small { display: block; font-size: .62rem; font-weight: 700; color: var(--ink-2); }
+/* 3개월 평균 대비 증감 — 증가 벽돌색·감소 이끼색 (▴▾로 방향도 표시) */
+small.delta.up { color: #b0483a; }
+small.delta.down { color: #5c7a48; }
 button.cbar { width: 100%; text-align: left; }
 
 /* 카테고리 추이 팝업 */

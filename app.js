@@ -1,9 +1,9 @@
-import { SUPABASE_URL, SUPABASE_KEY } from "./config.js";
+﻿import { SUPABASE_URL, SUPABASE_KEY } from "./config.js";
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm";
 
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
 const $ = (id) => document.getElementById(id);
-const fmtEur = (n) => Number(n).toLocaleString("de-AT", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €";
+const fmtEur = (n) => Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €";
 const todayStr = () => new Date().toLocaleDateString("sv-SE"); // YYYY-MM-DD, 로컬 기준
 
 let me = null;            // { email, member_code, display_name }
@@ -244,7 +244,7 @@ function updateSaveButton() {
   const raw = parseFloat($("add-amount").value.replace(/,/g, "."));
   const parts = [WHO_NAME[addState.who]];
   if (cat) parts.push(cat.name);
-  if (raw > 0) parts.push(raw.toLocaleString("de-AT", { minimumFractionDigits: 2 }) + (addState.currency === "KRW" ? " ₩" : " €"));
+  if (raw > 0) parts.push(raw.toLocaleString("en-US", { minimumFractionDigits: 2 }) + (addState.currency === "KRW" ? " ₩" : " €"));
   sub.textContent = parts.join(" · ");
   sub.hidden = parts.length < 2;
 }
@@ -417,7 +417,7 @@ function monthRange(ym) {
   return [`${ym}-01`, `${ym}-${String(last).padStart(2, "0")}`];
 }
 
-const fmtNum = (n) => Number(n).toLocaleString("de-AT", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtNum = (n) => Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 // ── 검색 (전체 기간: 메모·카테고리명·정확 금액) ──
 let searchTimer;
@@ -661,10 +661,10 @@ async function renderStats() {
   const maxV = rows.length ? rows[0][1] : 1;
 
   const deltaTxt = (curV, avgV) => {
-    if (!avgV) return "신규";
+    if (!avgV) return `<small class="delta">신규</small>`;
     const p = Math.round(((curV - avgV) / avgV) * 100);
-    if (p === 0) return "평균 수준";
-    return (p > 0 ? "+" : "−") + Math.abs(p) + "%";
+    if (p === 0) return `<small class="delta">평균 수준</small>`;
+    return `<small class="delta ${p > 0 ? "up" : "down"}">${p > 0 ? "▴" : "▾"}${Math.abs(p)}%</small>`;
   };
 
   // 구독·자동이체 월 환산 (지출 규칙만)
@@ -689,7 +689,7 @@ async function renderStats() {
         <button type="button" class="cbar" data-cat="${cid}">
           <span class="n">${esc(catName(cid))}</span>
           <span class="track" style="width:${Math.max(2, Math.round((v / maxV) * 100))}%"></span>
-          <span class="val">${fmtNum(v)}<small>${deltaTxt(v, prevAvg[cid])}</small></span>
+          <span class="val">${fmtNum(v)}${deltaTxt(v, prevAvg[cid])}</span>
         </button>`).join("") : `<p class="empty">이 달 지출이 없습니다</p>`}
     </div>
 
@@ -731,7 +731,7 @@ async function fetchCatMonthly(catId) {
   }
   return { byMonth, first };
 }
-const fmtShort = (v) => Math.round(v).toLocaleString("de-AT");
+const fmtShort = (v) => Math.round(v).toLocaleString("en-US");
 
 async function openCatTrend(catId) {
   openModal(`
@@ -743,7 +743,8 @@ async function openCatTrend(catId) {
       <button type="button" data-m="year">연도별</button>
     </div>
     <p class="ct-label" id="ct-label">&nbsp;</p>
-    <div id="ct-chart"><p class="empty">불러오는 중…</p></div>`);
+    <div id="ct-chart"><p class="empty">불러오는 중…</p></div>
+    <p class="fine" style="margin-top:10px">최대 = 이 기간에서 가장 컸던 달의 금액(그래프 세로축 천장) · 점선 = 기간 전체의 월평균. 연도별 보기는 해 단위 합계이며 연평균 옆에 월 환산을 함께 보여줘요. 점을 누르면 그 달(해) 금액이 위에 표시돼요.</p>`);
   let res;
   try { res = await fetchCatMonthly(catId); }
   catch { if ($("ct-chart")) $("ct-chart").innerHTML = `<p class="empty">불러오기 실패</p>`; return; }
@@ -759,7 +760,13 @@ async function openCatTrend(catId) {
       keys = [];
       for (let y = Number(first.slice(0, 4)); y <= Number(cur.slice(0, 4)); y++) keys.push(String(y));
       vals = keys.map((y) => Object.entries(byMonth).reduce((s, [k, v]) => k.startsWith(y) ? s + v : s, 0));
-      labelOf = (i) => `${keys[i]}년 · ${fmtEur(vals[i])}`;
+      // 걸친 해(시작·올해)는 실제 데이터가 있는 개월 수로 월 환산
+      const monthsOf = (y) => {
+        const a = y === first.slice(0, 4) ? Number(first.slice(5)) : 1;
+        const b = y === cur.slice(0, 4) ? Number(cur.slice(5)) : 12;
+        return b - a + 1;
+      };
+      labelOf = (i) => `${keys[i]}년 · ${fmtEur(vals[i])} (월 ${fmtEur(vals[i] / monthsOf(keys[i]))})`;
     } else {
       const from = mode === "12m" ? ymAdd(cur, -11) : mode === "3y" ? ymAdd(cur, -35) : first;
       keys = []; let k = from;
@@ -792,18 +799,29 @@ async function openCatTrend(catId) {
       ? vals.map((v, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="2.6" fill="var(--ink)"/>`).join("")
       : "";
 
+    // 라벨은 종이색 테두리(halo)로 그래프 선 위에서도 읽히게, 평균선이 위쪽이면 라벨을 선 아래로
+    const halo = `paint-order="stroke" stroke="var(--paper)" stroke-width="3.5" stroke-linejoin="round" pointer-events="none"`;
+    const avgY = y(avg);
+    const avgLabelY = avgY < 34 ? avgY + 13 : avgY - 5;
+    let avgLabel = `월평균 ${fmtShort(avg)} €`;
+    if (mode === "year") {
+      // 월 환산 = 전체 합 ÷ 전체 개월 수 (부분 연도 왜곡 없음)
+      const totalMonths = (Number(cur.slice(0, 4)) - Number(first.slice(0, 4))) * 12
+        + Number(cur.slice(5)) - Number(first.slice(5)) + 1;
+      avgLabel = `연평균 ${fmtShort(avg)} · 월 ${fmtShort(vals.reduce((s, v) => s + v, 0) / totalMonths)} €`;
+    }
     $("ct-chart").innerHTML = `
       <svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
-        <text x="${L}" y="10" font-size="9" fill="var(--ink-2)">${fmtShort(max)} €</text>
         <line x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}" stroke="var(--card-line)"/>
         <path d="${area}" fill="rgba(38,38,32,.07)"/>
-        <line x1="${L}" y1="${y(avg).toFixed(1)}" x2="${W - R}" y2="${y(avg).toFixed(1)}" stroke="var(--ink-2)" stroke-dasharray="4 4" stroke-width="1"/>
-        <text x="${W - R}" y="${(y(avg) - 4).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--ink-2)">평균 ${fmtShort(avg)}</text>
+        <line x1="${L}" y1="${avgY.toFixed(1)}" x2="${W - R}" y2="${avgY.toFixed(1)}" stroke="var(--ink-2)" stroke-dasharray="4 4" stroke-width="1"/>
         <path d="${line}" fill="none" stroke="var(--ink)" stroke-width="1.8" stroke-linejoin="round"/>
         ${dots}
         <circle id="ct-dot" r="4.2" fill="var(--paper)" stroke="var(--ink)" stroke-width="2" visibility="hidden"/>
         ${hits}
         ${ticks}
+        <text x="${L}" y="10" font-size="9" fill="var(--ink-2)" ${halo}>최대 ${fmtShort(max)} €</text>
+        <text x="${W - R}" y="${avgLabelY.toFixed(1)}" text-anchor="end" font-size="9" fill="var(--ink-2)" ${halo}>${avgLabel}</text>
       </svg>`;
     const dot = $("ct-dot");
     const select = (i) => {
