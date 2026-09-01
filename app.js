@@ -98,7 +98,8 @@ async function loadRefs() {
 
 async function postRecurring() {
   const { data, error } = await sb.rpc("post_due_occurrences");
-  if (!error && data > 0) { toast(`반복 거래 ${data}건 자동 기록됨`); renderList(); }
+  if (error) return toast("반복 거래 자동 기록 실패: " + error.message, 4000);
+  if (data > 0) { toast(`반복 거래 ${data}건 자동 기록됨`); renderList(); }
 }
 
 // ─────────────────────────────────────────── 입력 탭
