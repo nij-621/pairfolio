@@ -3,7 +3,9 @@
 --     함수가 매번 실패 → 배포 후 지금까지 자동 전기 0건. 변수명을 바꿔 해결.
 -- (2) '오늘' 판정을 UTC(current_date)가 아닌 빈 현지 날짜로 — 자정~새벽 2시 사이
 --     당일 회차가 안 잡히던 문제 해결.
--- SQL Editor에 전체 붙여넣고 Run. 마지막 select가 밀린 회차를 즉시 전기하고 건수를 보여줌.
+-- SQL Editor에 전체 붙여넣고 Run — 함수 교체만 함.
+-- 전기 실행은 앱을 열면 자동으로 됨 (transactions.created_by가 auth.uid() 기본값이라
+-- 로그인 없는 SQL Editor에서 직접 실행하면 not-null 위반으로 실패함).
 
 create or replace function public.post_due_occurrences()
 returns int
@@ -61,4 +63,4 @@ begin
   return posted;
 end $$;
 
-select public.post_due_occurrences() as posted_now;
+select 'ok — 이제 앱을 열면 전기됩니다' as done;
