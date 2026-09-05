@@ -34,6 +34,33 @@ function autoGrow(el) {
   requestAnimationFrame(fit); // 모달이 첫 프레임에 그려진 뒤 측정해야 정확함
   return fit;
 }
+// ── 텍스트 필드 X(지우기) 버튼 ──
+// bindClear: 이미 있는 버튼을 필드에 연결. addClearBtn: 필드를 감싸고 버튼을 새로 만들어 붙임.
+const X_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>`;
+function bindClear(el, btn) {
+  const sync = () => { btn.hidden = !el.value; };
+  el.addEventListener("input", sync);
+  btn.addEventListener("click", () => {
+    el.value = "";
+    el.dispatchEvent(new Event("input", { bubbles: true })); // autoGrow·검색 등 기존 input 리스너 재사용
+    el.focus();
+  });
+  el.clearSync = sync; // 코드로 value를 바꾼 뒤 호출
+  sync();
+}
+function addClearBtn(el) {
+  if (!el) return;
+  const wrap = document.createElement("span");
+  wrap.className = "clr-wrap";
+  wrap.style.marginTop = getComputedStyle(el).marginTop; // 필드의 위 여백을 래퍼로 옮김
+  el.style.marginTop = "0"; el.style.paddingRight = "40px";
+  el.replaceWith(wrap); wrap.appendChild(el);
+  const btn = document.createElement("button");
+  btn.type = "button"; btn.className = "clear-btn"; btn.setAttribute("aria-label", "지우기");
+  btn.innerHTML = X_SVG;
+  wrap.appendChild(btn);
+  bindClear(el, btn);
+}
 $("modal-back")?.addEventListener("click", closeModal);
 document.addEventListener("click", (e) => { if (e.target.id === "modal-back") closeModal(); });
 
@@ -180,6 +207,7 @@ function openCatManager() {
     <div id="cm-active" class="sheet"></div>
     <label style="margin-top:14px">보관됨</label>
     <div id="cm-archived" class="sheet"></div>`);
+  addClearBtn($("cm-name"));
   const renderLists = () => {
     const act = $("cm-active"); act.innerHTML = "";
     for (const c of cats.filter((x) => !x.archived)) {
@@ -249,6 +277,7 @@ function updateSaveButton() {
   sub.textContent = parts.join(" · ");
   sub.hidden = parts.length < 2;
 }
+addClearBtn($("add-memo"));
 $("add-currency").addEventListener("click", () => {
   addState.currency = addState.currency === "EUR" ? "KRW" : "EUR";
   const b = $("add-currency");
@@ -329,7 +358,7 @@ function showAddMsg(text, bad = false) {
   clearTimeout(m._h); m._h = setTimeout(() => (m.hidden = true), 3200);
 }
 function resetAddForm() {
-  $("add-amount").value = ""; $("add-memo").value = "";
+  $("add-amount").value = ""; $("add-memo").value = ""; $("add-memo").clearSync();
   addState.catId = null; addState.showAll = false;
   renderCatGrid(); updateSaveButton();
   $("add-amount").focus();
@@ -426,7 +455,12 @@ $("tx-search").addEventListener("input", () => {
   clearTimeout(searchTimer);
   searchTimer = setTimeout(() => { $("tx-search").value.trim() ? runSearch() : renderList(); }, 280);
 });
-function clearSearch() { if ($("tx-search").value) $("tx-search").value = ""; }
+bindClear($("tx-search"), $("tx-search-clear"));
+function clearSearch() {
+  const s = $("tx-search");
+  if (s.value) s.value = "";
+  s.clearSync();
+}
 
 async function runSearch() {
   const q = $("tx-search").value.trim();
@@ -559,6 +593,7 @@ function openEditTx(t) {
       <button class="btn-primary" id="e-save">저장</button>
     </div>`);
   if (rule) $("e-rule").onclick = () => openRuleForm(rule);
+  addClearBtn($("e-memo"));
   autoGrow($("e-memo"));
   $("e-save").onclick = async () => {
     const amt = parseFloat($("e-amt").value.replace(/,/g, "."));
@@ -971,6 +1006,7 @@ function openRuleForm(r) {
   }
 
   $("r-cancel").onclick = closeModal;
+  addClearBtn($("r-name")); addClearBtn($("r-memo"));
   const fitMemo = autoGrow($("r-memo"));
   $("modal").querySelector(".rule-adv")?.addEventListener("toggle", fitMemo);
 
@@ -1071,6 +1107,7 @@ function openTripForm(t) {
       <button class="btn-primary" id="t-save">저장</button>
     </div>`);
   $("t-cancel").onclick = closeModal;
+  addClearBtn($("t-name"));
   if (!isNew) $("t-del").onclick = async () => {
     if (!confirm(`"${t.name}" 여행을 삭제할까요?`)) return;
     const { error } = await sb.from("trips").delete().eq("id", t.id);
@@ -1445,6 +1482,7 @@ function openInterestForm(t) {
   };
   renderSeg();
   $("i-cancel").onclick = closeModal;
+  addClearBtn($("i-memo"));
   if (!isNew) $("i-del").onclick = async () => {
     if (!confirm("이 이자 기록을 삭제할까요?")) return;
     const { error } = await sb.from("tr_interest").update({ deleted_at: new Date().toISOString() }).eq("id", t.id);
@@ -1489,6 +1527,7 @@ function openHoldingForm(h) {
       <button class="btn-primary" id="h-save">저장</button>
     </div>`);
   $("h-cancel").onclick = closeModal;
+  addClearBtn($("h-name"));
   if (!isNew) $("h-arch").onclick = async () => {
     const { error } = await sb.from("holdings").update({ archived: !h.archived }).eq("id", h.id);
     if (error) return toast("실패: " + error.message);

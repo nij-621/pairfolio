@@ -176,6 +176,14 @@ h2 { font-size: .92rem; font-weight: 800; margin: 24px 0 8px; }
 .search-row svg { width: 16px; height: 16px; color: var(--ink-2); flex-shrink: 0; }
 .search-row input { flex: 1; border: 0; background: transparent; padding: 11px 0; font-size: .88rem; }
 .search-row input:focus { outline: none; }
+.search-row input::-webkit-search-cancel-button, .search-row input::-webkit-search-decoration { -webkit-appearance: none; display: none; }
+/* 텍스트 필드 X(지우기) — 검색란은 flex 자식, 나머지는 .clr-wrap 안에 absolute */
+.clear-btn { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; color: var(--ink-2); flex-shrink: 0; }
+.clear-btn svg { width: 16px; height: 16px; }
+.clear-btn:active { background: var(--card-line); }
+.search-row .clear-btn { margin-right: -6px; }
+.clr-wrap { position: relative; display: block; }
+.clr-wrap .clear-btn { position: absolute; right: 8px; top: 8px; } /* 필드 높이 45px 기준 세로 중앙, textarea는 첫 줄 */
 .search-head { font-size: .72rem; font-weight: 800; color: var(--ink-2); margin: 14px 2px 6px; }
 .search-sum { font-size: .78rem; font-weight: 700; color: var(--ink-2); text-align: center; margin: 2px 0 4px; font-variant-numeric: tabular-nums; }
 .mo-summary { padding-bottom: 10px; margin-bottom: 8px; }
