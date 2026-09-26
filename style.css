@@ -237,6 +237,13 @@ button.cbar { width: 100%; text-align: left; }
 .trend-seg button.on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
 .ct-label { font-size: .82rem; font-weight: 800; margin: 12px 2px 4px; min-height: 1.2em; font-variant-numeric: tabular-nums; }
 #ct-chart svg { width: 100%; height: auto; display: block; }
+button.an-tile { width: 100%; font: inherit; color: inherit; cursor: pointer; }
+/* 수입·지출 추이 범례 + 라벨(두 줄 허용) */
+.ft-legend { display: flex; gap: 12px; margin-top: 10px; font-size: .7rem; font-weight: 800; color: var(--ink-2); }
+.ft-legend span::before { content: ""; display: inline-block; width: 14px; height: 3px; border-radius: 2px; margin: 0 5px 3px 0; vertical-align: middle; background: var(--ink); }
+.ft-legend .km::before { background: var(--km); }
+.ft-legend .mk::before { background: var(--mk); }
+.ct-label small { font-weight: 700; color: var(--ink-2); }
 
 .an-split { background: var(--card); border: 1px solid var(--card-line); border-radius: 12px; padding: 14px; }
 .an-split .bar { display: flex; height: 14px; border-radius: 4px; overflow: hidden; background: var(--grid-strong); }

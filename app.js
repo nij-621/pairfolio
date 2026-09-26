@@ -713,9 +713,9 @@ async function renderStats() {
 
   $("an-body").innerHTML = `
     <div class="an-tiles">
-      <div class="an-tile"><p class="t">지출 €</p><p class="v">${fmtNum(spend)}</p></div>
-      <div class="an-tile"><p class="t">수입 €</p><p class="v in">${fmtNum(income)}</p></div>
-      <div class="an-tile"><p class="t">저축률</p><p class="v">${rate === null ? "—" : rate + "%"}</p></div>
+      <button type="button" class="an-tile" data-flow><p class="t">지출 €</p><p class="v">${fmtNum(spend)}</p></button>
+      <button type="button" class="an-tile" data-flow><p class="t">수입 €</p><p class="v in">${fmtNum(income)}</p></button>
+      <button type="button" class="an-tile" data-flow><p class="t">저축률</p><p class="v">${rate === null ? "—" : rate + "%"}</p></button>
     </div>
     <p class="an-note">지출은 소비만 — 대출 상환(이전)·투자 이체는 제외. 지출 3개월 평균 대비 ${totalDelta}</p>
 
@@ -742,6 +742,8 @@ async function renderStats() {
     </div>`;
   $("an-body").querySelectorAll(".cbar[data-cat]").forEach((b) =>
     b.onclick = () => openCatTrend(b.dataset.cat));
+  $("an-body").querySelectorAll(".an-tile[data-flow]").forEach((b) =>
+    b.onclick = () => openFlowTrend());
 }
 
 // ── 카테고리 추이 (팝업 꺾은선) ──
@@ -864,6 +866,134 @@ async function openCatTrend(catId) {
       dot.setAttribute("cx", x(i).toFixed(1));
       dot.setAttribute("cy", y(vals[i]).toFixed(1));
       $("ct-label").textContent = labelOf(i);
+    };
+    $("ct-chart").querySelectorAll("rect[data-i]").forEach((rc) =>
+      rc.onclick = () => select(Number(rc.dataset.i)));
+    select(n - 1);
+  };
+  $("ct-seg").querySelectorAll("button").forEach((b) => b.onclick = () => {
+    mode = b.dataset.m;
+    $("ct-seg").querySelectorAll("button").forEach((s) => s.classList.toggle("on", s === b));
+    draw();
+  });
+  draw();
+}
+
+// ── 수입·지출 추이 (팝업, 규문 수입·민경 수입·총지출 세 선 + 저축률) ──
+async function fetchFlowMonthly() {
+  const by = {}; let first = null;   // by[ym] = { km, mk, sp }
+  for (let page = 0; ; page++) {
+    const { data, error } = await sb.from("transactions")
+      .select("tx_date, tx_type, paid_by, amount_eur")
+      .in("tx_type", ["income", "expense"]).is("deleted_at", null)
+      .order("tx_date", { ascending: true })
+      .range(page * 1000, page * 1000 + 999);
+    if (error) throw error;
+    for (const t of data) {
+      const k = t.tx_date.slice(0, 7);
+      const r = by[k] ?? (by[k] = { km: 0, mk: 0, sp: 0 });
+      const a = Number(t.amount_eur);
+      if (t.tx_type === "expense") r.sp += a;
+      else if (t.paid_by === "KM") r.km += a; else r.mk += a;
+      first = first ?? k;
+    }
+    if (data.length < 1000) break;
+  }
+  return { by, first };
+}
+
+async function openFlowTrend() {
+  openModal(`
+    <h3>수입·지출 추이</h3>
+    <div class="trend-seg" id="ct-seg">
+      <button type="button" data-m="12m">12개월</button>
+      <button type="button" data-m="3y">3년</button>
+      <button type="button" data-m="all">전체</button>
+      <button type="button" data-m="year" class="on">연도별</button>
+    </div>
+    <div class="ft-legend"><span class="km">규문 수입</span><span class="mk">민경 수입</span><span class="sp">지출</span></div>
+    <p class="ct-label" id="ct-label">&nbsp;</p>
+    <div id="ct-chart"><p class="empty">불러오는 중…</p></div>
+    <p class="fine" style="margin-top:10px">월급은 거의 일정하고 보너스 달(6월·연말)만 튀어서, 추세는 <b>연도별</b>로 보는 게 맞아요. 저축률 = (수입 − 지출) ÷ 수입, 지출은 소비만(대출 상환·투자 이체 제외). 점을 누르면 그 해(달) 숫자가 위에 표시돼요.</p>`);
+  let res;
+  try { res = await fetchFlowMonthly(); }
+  catch { if ($("ct-chart")) $("ct-chart").innerHTML = `<p class="empty">불러오기 실패</p>`; return; }
+  if (!$("ct-chart")) return;
+  const { by, first } = res;
+  if (!first) { $("ct-chart").innerHTML = `<p class="empty">기록이 없습니다</p>`; return; }
+
+  let mode = "year";
+  const draw = () => {
+    const cur = todayStr().slice(0, 7);
+    let keys, rows, labelOf;
+    const sumOf = (pred) => {
+      const r = { km: 0, mk: 0, sp: 0 };
+      for (const [k, v] of Object.entries(by)) if (pred(k)) { r.km += v.km; r.mk += v.mk; r.sp += v.sp; }
+      return r;
+    };
+    const rateTxt = (r) => { const inc = r.km + r.mk; return inc > 0 ? `저축률 ${Math.round(((inc - r.sp) / inc) * 100)}%` : "저축률 —"; };
+    const detail = (r) => `수입 ${fmtShort(r.km + r.mk)} € <small>(규문 ${fmtShort(r.km)} / 민경 ${fmtShort(r.mk)})</small> · 지출 ${fmtShort(r.sp)} € · ${rateTxt(r)}`;
+    if (mode === "year") {
+      keys = [];
+      for (let y = Number(first.slice(0, 4)); y <= Number(cur.slice(0, 4)); y++) keys.push(String(y));
+      rows = keys.map((y) => sumOf((k) => k.startsWith(y)));
+      const monthsOf = (y) => {
+        const a = y === first.slice(0, 4) ? Number(first.slice(5)) : 1;
+        const b = y === cur.slice(0, 4) ? Number(cur.slice(5)) : 12;
+        return b - a + 1;
+      };
+      labelOf = (i) => {
+        const m = monthsOf(keys[i]);
+        return `<b>${keys[i]}년</b>${m < 12 ? ` <small>(${m}개월)</small>` : ""} · ${detail(rows[i])}`;
+      };
+    } else {
+      const from = mode === "12m" ? ymAdd(cur, -11) : mode === "3y" ? ymAdd(cur, -35) : first;
+      keys = []; let k = from;
+      while (k <= cur) { keys.push(k); k = ymAdd(k, 1); }
+      rows = keys.map((k2) => by[k2] ?? { km: 0, mk: 0, sp: 0 });
+      labelOf = (i) => `<b>${keys[i].slice(0, 4)}년 ${Number(keys[i].slice(5))}월</b> · ${detail(rows[i])}`;
+    }
+    const W = 340, H = 180, L = 6, R = 6, T = 16, B = 20;
+    const n = rows.length;
+    const max = Math.max(1, ...rows.flatMap((r) => [r.km, r.mk, r.sp]));
+    const x = (i) => n === 1 ? W / 2 : L + (i * (W - L - R)) / (n - 1);
+    const y = (v) => T + (1 - v / max) * (H - T - B);
+    const path = (f) => rows.map((r, i) => `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(f(r)).toFixed(1)}`).join(" ");
+    const series = [
+      { f: (r) => r.sp, color: "var(--ink)" },
+      { f: (r) => r.km, color: "var(--km)" },
+      { f: (r) => r.mk, color: "var(--mk)" },
+    ];
+    const yearsSpan = Number(cur.slice(0, 4)) - Number((mode === "year" ? keys[0] : keys[0].slice(0, 4)));
+    const ticks = keys.map((k2, i) => {
+      let txt = null;
+      if (mode === "12m") { if (i % 3 === 0) txt = `${Number(k2.slice(5))}월`; }
+      else if (mode === "year") { if (yearsSpan <= 8 || Number(k2) % 2 === 0) txt = `'${k2.slice(2)}`; }
+      else if (k2.slice(5) === "01" && (yearsSpan <= 6 || Number(k2.slice(0, 4)) % 2 === 0)) txt = `'${k2.slice(2, 4)}`;
+      return txt === null ? "" : `<text x="${x(i).toFixed(1)}" y="${H - 6}" text-anchor="middle" font-size="9" fill="var(--ink-2)">${txt}</text>`;
+    }).join("");
+    const step = n === 1 ? W : (W - L - R) / (n - 1);
+    const hits = rows.map((r, i) =>
+      `<rect data-i="${i}" x="${(x(i) - step / 2).toFixed(1)}" y="0" width="${step.toFixed(1)}" height="${H}" fill="transparent"/>`).join("");
+    const dots = n <= 40
+      ? series.map((s) => rows.map((r, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(s.f(r)).toFixed(1)}" r="2.4" fill="${s.color}"/>`).join("")).join("")
+      : "";
+    const halo = `paint-order="stroke" stroke="var(--paper)" stroke-width="3.5" stroke-linejoin="round" pointer-events="none"`;
+    $("ct-chart").innerHTML = `
+      <svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
+        <line x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}" stroke="var(--card-line)"/>
+        ${series.map((s) => `<path d="${path(s.f)}" fill="none" stroke="${s.color}" stroke-width="1.8" stroke-linejoin="round"/>`).join("")}
+        ${dots}
+        <line id="ft-cursor" x1="0" x2="0" y1="${T}" y2="${H - B}" stroke="var(--ink-2)" stroke-dasharray="3 3" visibility="hidden"/>
+        ${hits}
+        ${ticks}
+        <text x="${L}" y="10" font-size="9" fill="var(--ink-2)" ${halo}>최대 ${fmtShort(max)} €</text>
+      </svg>`;
+    const cursor = $("ft-cursor");
+    const select = (i) => {
+      cursor.setAttribute("visibility", "visible");
+      cursor.setAttribute("x1", x(i).toFixed(1)); cursor.setAttribute("x2", x(i).toFixed(1));
+      $("ct-label").innerHTML = labelOf(i);
     };
     $("ct-chart").querySelectorAll("rect[data-i]").forEach((rc) =>
       rc.onclick = () => select(Number(rc.dataset.i)));
