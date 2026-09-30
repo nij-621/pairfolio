@@ -1032,6 +1032,15 @@ function ruleNextDue(r) {
   }
   return null;
 }
+// 오늘 이후 첫 '결제일' (재개 날짜 기본값)
+function nextByDay(day) {
+  const t = new Date(); t.setHours(0, 0, 0, 0);
+  for (let k = 0; ; k++) {
+    const d = new Date(t.getFullYear(), t.getMonth() + k, 1);
+    d.setDate(Math.min(day, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()));
+    if (d > t) return d.toLocaleDateString("sv-SE");
+  }
+}
 
 function renderRules() {
   const wrap = $("rule-list"); wrap.innerHTML = "";
@@ -1095,7 +1104,7 @@ function openRuleForm(r) {
     const nx = ruleNextDue(r);
     const usesSeq = r.memo_template === "" || r.memo_template.includes("{n}");
     const heroTxt =
-      r.status === "paused" ? "일시중지됨 — 재개하면 밀린 회차가 한꺼번에 기록됩니다" :
+      r.status === "paused" ? "일시중지됨 — 멈춘 기간은 기록·회차에서 빠집니다" :
       r.status === "ended" ? "종료됨" :
       nx ? `다음 결제 ${nx.due.getFullYear()}.${nx.due.getMonth() + 1}.${nx.due.getDate()} · ${fmtEur(r.amount_eur)}${usesSeq ? ` · ${nx.seq}회` : ""}${r.end_date ? ` · ${r.end_date}까지` : ""}` :
       "종료일이 지나 더 기록되지 않습니다";
@@ -1114,6 +1123,11 @@ function openRuleForm(r) {
         <label>새 금액 (EUR)<input id="r-amt" inputmode="decimal" value="${r.amount_eur}"></label>
         <p class="fine">다음 회차부터 적용됩니다 — 이미 기록된 거래는 바뀌지 않아요.</p>
       </div>
+      <div id="ra-resume-box" hidden>
+        <label>재개 후 첫 결제일<input id="r-resume" type="date" value="${nextByDay(r.day_of_month)}"></label>
+        <p class="fine">멈춘 기간은 기록하지 않고, 회차는 마지막 기록에서 이어집니다.</p>
+        <button type="button" class="btn-primary" id="r-resume-go">이 날짜로 재개</button>
+      </div>
       <details class="rule-adv"><summary>상세 설정</summary>
         <label>이름<input id="r-name" value="${esc(r.name)}"></label>
         <div class="row-2">
@@ -1124,9 +1138,10 @@ function openRuleForm(r) {
           <label>카테고리<select id="r-cat">${catOpts}</select></label>
           <label>결제<select id="r-who">${whoOpts}</select></label>
         </div>
+        ${nx ? `<label>다음 회차 (${nx.due.getMonth() + 1}.${nx.due.getDate()} 결제분)<input id="r-next" type="number" min="1" value="${nx.seq}"></label>` : ""}
         ${endLabel}
         ${memoLabel}
-        <p class="fine">시작일 ${r.start_date} · 지난 회차 ${r.seq_offset} — 회차 계산 기준이라 바꿀 수 없어요</p>
+        <p class="fine">회차 기준일 ${r.start_date} — 이미 기록된 거래의 회차는 바뀌지 않아요</p>
         <button type="button" class="btn-ghost danger adv-del" id="r-del">규칙 삭제</button>
       </details>
       <div class="actions">
@@ -1154,8 +1169,32 @@ function openRuleForm(r) {
     };
     $("ra-pause").onclick = () => {
       if (r.status === "active") return setStatus("paused", "일시중지됨");
-      if (!confirm("재개하면 멈춘 동안 밀린 회차가 한꺼번에 기록됩니다. 재개할까요?")) return;
-      setStatus("active", "재개됨");
+      const box = $("ra-resume-box");
+      box.hidden = !box.hidden;
+    };
+    // 재개 = 규칙 기준점 재설정: 기준일 = 고른 날짜, 지난 회차 = 마지막 기록 회차.
+    // 멈춘 기간의 칸은 기준일 이전이 되어 전기·회차 계산에서 모두 빠진다.
+    $("r-resume-go").onclick = async () => {
+      const start = $("r-resume").value;
+      if (!start) return toast("첫 결제일을 골라 주세요");
+      if (r.end_date && start > r.end_date) return toast("종료일보다 늦은 날짜예요");
+      const { data: last, error: e1 } = await sb.from("recurring_occurrences")
+        .select("due_date, seq_no").eq("rule_id", r.id)
+        .order("due_date", { ascending: false }).limit(1);
+      if (e1) return toast("실패: " + e1.message);
+      if (last[0] && start <= last[0].due_date) return toast(`마지막 기록(${last[0].due_date}) 이후 날짜로 골라 주세요`);
+      const [y, m, d] = start.split("-").map(Number);
+      const lastDay = new Date(y, m, 0).getDate();
+      const upd = {
+        status: "active", start_date: start,
+        seq_offset: last[0]?.seq_no ?? r.seq_offset,
+        // 월말 결제(30·31일)가 짧은 달에 당겨진 경우는 원래 결제일 유지
+        day_of_month: Math.min(r.day_of_month, lastDay) === d ? r.day_of_month : d,
+      };
+      const { error } = await sb.from("recurring_rules").update(upd).eq("id", r.id);
+      if (error) return toast("실패: " + error.message);
+      closeModal(); await loadRefs(); renderRules(); toast("재개됨");
+      postRecurring();
     };
     const endBtn = $("ra-end");
     if (endBtn) endBtn.onclick = () => {
@@ -1187,6 +1226,14 @@ function openRuleForm(r) {
       row.start_date = $("r-start").value;
       row.seq_offset = parseInt($("r-seq").value, 10) || 0;
       row.status = "active";
+    }
+    const nextIn = $("r-next");
+    if (nextIn && nextIn.value !== nextIn.defaultValue) {
+      const want = parseInt(nextIn.value, 10);
+      if (!(want >= 1)) return toast("다음 회차는 1 이상이에요");
+      // 바뀐 주기·결제일 기준으로 다음 칸을 다시 찾고, 그 칸이 want회가 되도록 역산
+      const nx2 = ruleNextDue({ ...r, ...row });
+      if (nx2) row.seq_offset = want - (nx2.seq - r.seq_offset);
     }
     if (!row.name || !row.amount_eur || !row.day_of_month) return toast("이름·금액·결제일은 필수예요");
     const startDate = isNew ? row.start_date : r.start_date;

@@ -400,8 +400,9 @@ button.an-tile { width: 100%; font: inherit; color: inherit; cursor: pointer; }
   flex: 1; padding: 11px 0; border: 1px solid var(--card-line); border-radius: 10px;
   background: var(--card); font-size: .8rem; font-weight: 800;
 }
-#ra-amt-box { margin-top: 4px; }
-#ra-amt-box .fine { margin-top: 8px; }
+#ra-amt-box, #ra-resume-box { margin-top: 4px; }
+#ra-amt-box .fine, #ra-resume-box .fine { margin-top: 8px; }
+#ra-resume-box .btn-primary { width: 100%; margin-top: 10px; }
 .rule-adv { margin-top: 16px; }
 .rule-adv summary { font-size: .78rem; font-weight: 800; color: var(--ink-2); cursor: pointer; padding: 4px 0; }
 .rule-adv .fine { margin-top: 14px; }
