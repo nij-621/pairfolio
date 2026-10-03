@@ -704,7 +704,7 @@ async function renderStats() {
   };
 
   // 구독·자동이체 월 환산 (지출 규칙만)
-  const CAD_DIV = { monthly: 1, bimonthly: 2, semiannual: 6, yearly: 12 };
+  const CAD_DIV = { monthly: 1, bimonthly: 2, quarterly: 3, semiannual: 6, yearly: 12 };
   const subRules = rules.filter((r) => r.status === "active" && r.tx_type === "expense");
   const subTotal = subRules.reduce((s, r) => s + Number(r.amount_eur) / CAD_DIV[r.cadence], 0);
 
@@ -1008,8 +1008,8 @@ async function openFlowTrend() {
 }
 
 // ─────────────────────────────────────────── 반복 규칙 (더보기)
-const CAD_STEP = { monthly: 1, bimonthly: 2, semiannual: 6, yearly: 12 };
-const CAD_KO = { monthly: "매월", bimonthly: "격월", semiannual: "반년", yearly: "매년" };
+const CAD_STEP = { monthly: 1, bimonthly: 2, quarterly: 3, semiannual: 6, yearly: 12 };
+const CAD_KO = { monthly: "매월", bimonthly: "격월", quarterly: "분기", semiannual: "반년", yearly: "매년" };
 // post_due_occurrences와 같은 규칙으로 다음 전기 예정일·회차 계산
 function ruleNextDue(r) {
   if (r.status !== "active") return null;
