@@ -1304,10 +1304,9 @@ function openTripForm(t) {
 
 // ─────────────────────────────────────────── 자산 탭 (4단계 축소판 — 자동 시세 없음)
 // 공식 기록은 월 1회 손 스냅샷뿐. IPS 목표·허용 범위는 앱 상수(IPS 변경은 서면 절차).
-// 기준: 통합 확정안 v3 (2026-08-23). 80/20 장기 목표 — 2026-08-30 사용자 확인으로 적용
-// (전제조건 미충족 상태로 되돌리려면 { target: 70, lo: 65, hi: 75 }, v3 6쪽).
+// 기준: 통합 확정안 v4 (2026-10-04). 80/20 적용 확정, 밴드는 TR 두 계좌 기준, 한국계좌 제외 (2026-10-04 결정) (v4 9쪽).
 const IPS_STOCK = { target: 80, lo: 75, hi: 85 };  // 주식 비중 %, 분모 = 주식+채권(현금 제외)
-const IPS_SINGLE_CAP = 10;                         // 단일 종목 상한 % (v3 연 1회 체크리스트)
+const IPS_SINGLE_CAP = 10;                         // 단일 종목 상한 % (v4 연 1회 체크리스트)
 const CLS_KO = { core: "주식 코어", nasdaq: "나스닥", satellite: "위성", bond: "국채", cash: "현금" };
 const OWNER_ORDER = ["MK", "KM"];        // 스냅샷 기입 순서 — 정기 투자하는 민경 계좌 먼저
 
@@ -1369,7 +1368,7 @@ async function renderAssets() {
     if (h.asset_class === "satellite" && (!maxSat || Number(s.value_eur) > maxSat.v))
       maxSat = { name: h.name, v: Number(s.value_eur) };
   }
-  // v3: 비중 분모 = 주식+채권 — TR 현금은 비상금·유보금이라 제외 (v3 5쪽)
+  // v4: 비중 분모 = 주식+채권 — 현금은 비상금·유보금이라 제외 (v4 5쪽)
   const equity = (clsSum.core ?? 0) + (clsSum.nasdaq ?? 0) + (clsSum.satellite ?? 0);
   const invested = equity + (clsSum.bond ?? 0);
   const stockPct = invested > 0 ? (equity / invested) * 100 : 0;
@@ -1422,17 +1421,17 @@ async function renderAssets() {
   body.innerHTML = `
     <div class="sheet as-hero">
       <p class="hv">${total > 0 ? fmtNum(total) + " €" : "—"}</p>
-      <p class="hd">${lastYm ? `${lastYm.slice(0, 4)}년 ${Number(lastYm.slice(5))}월 스냅샷 · 두 계좌 합산 · ${ymList.length}회째` : "첫 스냅샷을 기록해 주세요"}</p>
+      <p class="hd">${lastYm ? `${lastYm.slice(0, 4)}년 ${Number(lastYm.slice(5))}월 스냅샷 · TR 두 계좌 합산 · ${ymList.length}회째` : "첫 스냅샷을 기록해 주세요"}</p>
     </div>
     ${nudge}
 
-    <p class="an-sec">IPS 비중 점검 — v3 확정안</p>
+    <p class="an-sec">IPS 비중 점검 — v4 확정안</p>
     <div class="sheet" style="padding:12px 14px">
       ${invested > 0 ? bandRows + `
       <div class="as-risk"><span>코어 ${iPct(clsSum.core ?? 0).toFixed(1)} · 나스닥 ${iPct(clsSum.nasdaq ?? 0).toFixed(1)} · 위성 ${iPct(clsSum.satellite ?? 0).toFixed(1)}%</span><span>현금 ${fmtNum(clsSum.cash ?? 0)} € 제외</span></div>`
       : `<p class="empty">스냅샷이 쌓이면 여기서 IPS 허용 범위를 점검해요</p>`}
     </div>
-    ${invested > 0 ? `<p class="an-note">두 계좌 합산, 분모는 주식+채권(TR 현금 제외) · 80/20 장기 목표 (v3) · 범위 밖이면 신규 적립 비중부터 조정, 매도는 6개월 뒤에만 검토 (v3 9쪽)</p>` : ""}
+    ${invested > 0 ? `<p class="an-note">TR 두 계좌 합산(한국계좌 제외), 분모는 주식+채권(현금 제외) · 80/20 (v4) · 범위 밖이면 신규 적립 비중부터 조정, 매도는 6개월 뒤에만 검토 (v4 9쪽)</p>` : ""}
 
     <p class="an-sec">평가액 추이</p>
     <p class="ct-label" id="as-label">&nbsp;</p>
