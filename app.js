@@ -111,6 +111,7 @@ async function enterApp(session) {
   renderMore();
   flushQueue();
   postRecurring();
+  refreshMeterStatus();
 }
 
 async function loadRefs() {
@@ -1720,6 +1721,280 @@ function openHoldingForm(h) {
   };
 }
 
+// ─────────────────────────────────────────── 검침 (더보기 + 입력 탭 알림 띠)
+// DB엔 기기에 찍힌 누적 숫자만. 월 사용량 = 두 기록 차이를 일수로 나눠 달력 월에 배분
+// → 읽는 날이 매번 달라도 추이가 안 흔들림. 증감은 작년 같은 달 대비 (3개월 평균은 계절만 보여 줘서 안 씀).
+// 결정 배경: 작업실 .grill/utility-meter-readings.md
+const METERS = [
+  { key: "cold", name: "냉수", unit: "m³",  dp: 1 },
+  { key: "hot",  name: "온수", unit: "m³",  dp: 1 },
+  { key: "heat", name: "난방", unit: "kWh", dp: 0 },
+  { key: "cool", name: "냉방", unit: "kWh", dp: 0 },
+  { key: "elec", name: "전기", unit: "kWh", dp: 0 },
+];
+let meterRows = [];   // 삭제 안 된 전체, read_on 오름차순 (월 5행 규모)
+async function loadMeters() {
+  const { data, error } = await sb.from("meter_readings").select("*").is("deleted_at", null).order("read_on");
+  if (error) throw error;
+  meterRows = data;
+}
+const meterErrMsg = (e) => /does not exist|relation|schema cache/i.test(e?.message ?? "")
+  ? "migrations/010_meter_readings.sql을 SQL Editor에서 먼저 실행하세요" : "불러오기 실패";
+const fmtRead = (v) => Number(v).toLocaleString("en-US", { maximumFractionDigits: 3 });
+const fmtUse = (m, v) => Number(v).toLocaleString("en-US", { minimumFractionDigits: m.dp, maximumFractionDigits: m.dp });
+const dayNum = (s) => Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10)) / 864e5;
+const mdOf = (s) => `${Number(s.slice(5, 7))}/${Number(s.slice(8, 10))}`;
+
+// 기록 a→b 사이 사용량. 교체면 옛 계량기 끝값까지 + 새 계량기 시작값부터. 계산 불가(음수·끝값 모름)는 null
+function meterUse(prevVal, b) {
+  const u = b.replaced
+    ? (b.old_end == null ? NaN : (Number(b.old_end) - prevVal) + (Number(b.value) - Number(b.new_start ?? 0)))
+    : Number(b.value) - prevVal;
+  return u >= 0 ? u : null;
+}
+// 계량기별 달력 월 사용량 — 하루도 빠짐없이 덮인 달만 (계산 불가 구간이 낀 달·진행 중인 달은 빠짐)
+function meterMonthly(key) {
+  const rs = meterRows.filter((r) => r.meter === key);
+  const sum = {}, cover = {};
+  for (let i = 1; i < rs.length; i++) {
+    const u = meterUse(Number(rs[i - 1].value), rs[i]);
+    if (u == null) continue;
+    const d0 = dayNum(rs[i - 1].read_on), d1 = dayNum(rs[i].read_on);
+    for (let d = d0; d < d1; d++) {
+      const ym = new Date(d * 864e5).toISOString().slice(0, 7);
+      sum[ym] = (sum[ym] ?? 0) + u / (d1 - d0);
+      cover[ym] = (cover[ym] ?? 0) + 1;
+    }
+  }
+  const out = {};
+  for (const ym of Object.keys(sum)) {
+    const [y, m] = ym.split("-").map(Number);
+    if (cover[ym] === new Date(Date.UTC(y, m, 0)).getUTCDate()) out[ym] = sum[ym];
+  }
+  return out;
+}
+
+// 알림 띠 (입력 탭): 매달 28일 ~ 다음 달 5일, 25일 이후 기록이 없으면. 닫으면 그 회차엔 안 뜸 (기기별)
+async function refreshMeterStatus() {
+  const { data, error } = await sb.from("meter_readings").select("read_on")
+    .is("deleted_at", null).order("read_on", { ascending: false }).limit(1);
+  const last = error ? null : data[0]?.read_on ?? null;
+  $("meter-last").textContent = error ? "" : last ? `지난번 ${mdOf(last)}` : "아직 없음";
+
+  const el = $("meter-nudge");
+  const t = new Date(), d = t.getDate();
+  el.hidden = true;
+  if (error || (d > 5 && d < 28)) return;
+  const due = d >= 28 ? new Date(t.getFullYear(), t.getMonth() + 1, 1) : new Date(t.getFullYear(), t.getMonth(), 1);
+  const key = due.toLocaleDateString("sv-SE").slice(0, 7);
+  const from = new Date(due.getFullYear(), due.getMonth() - 1, 25).toLocaleDateString("sv-SE");
+  let dismissed = null;
+  try { dismissed = localStorage.getItem("pf-meter-nudge"); } catch {}
+  if (dismissed === key || (last && last >= from)) return;
+  $("meter-nudge-text").textContent = `검침할 때예요${last ? ` · 지난번 ${mdOf(last)}` : ""}`;
+  el.hidden = false;
+  $("meter-nudge-x").onclick = () => {
+    try { localStorage.setItem("pf-meter-nudge", key); } catch {}
+    el.hidden = true;
+  };
+}
+$("meter-nudge-go").addEventListener("click", () => openMeterForm(todayStr()));
+$("meter-new").addEventListener("click", () => openMeterForm(todayStr()));
+$("meter-trend").addEventListener("click", () => openMeterTrend());
+
+// ── 기록 시트 (그 날짜에 기록이 있으면 수정, 비우면 삭제) ──
+async function openMeterForm(dateStr, after) {
+  try { await loadMeters(); } catch (e) { return toast(meterErrMsg(e), 4000); }
+  openModal(`
+    <h3>검침 기록</h3>
+    <p class="fx-note">기기에 찍힌 숫자 그대로 — 소수점 자릿수 자유. 읽은 것만 적어도 돼요.</p>
+    <label>날짜<input id="mt-date" type="date" value="${dateStr}" max="${todayStr()}"></label>
+    <p class="fx-note" id="mt-gap"></p>
+    <div id="mt-rows"></div>
+    <div class="actions">
+      <button class="btn-ghost" id="mt-cancel">취소</button>
+      <button class="btn-primary" id="mt-save">저장</button>
+    </div>`);
+  const back = () => (after ? after() : closeModal());
+  $("mt-cancel").onclick = back;
+
+  let items = [];   // { m, cur, prev, next, el }
+  const render = () => {
+    const date = $("mt-date").value || todayStr();
+    const wrap = $("mt-rows"); wrap.innerHTML = "";
+    let lastPrev = null;
+    items = METERS.map((m) => {
+      const rs = meterRows.filter((r) => r.meter === m.key);
+      const cur = rs.find((r) => r.read_on === date) ?? null;
+      const prev = rs.filter((r) => r.read_on < date).pop() ?? null;
+      const next = rs.find((r) => r.read_on > date) ?? null;
+      if (prev && (!lastPrev || prev.read_on > lastPrev)) lastPrev = prev.read_on;
+      const el = document.createElement("div");
+      el.innerHTML = `
+        <div class="mt-row">
+          <span class="mdot" style="background:var(--m-${m.key})"></span>
+          <span class="lb">${m.name}<small>${prev ? `지난번 ${fmtRead(prev.value)} ${m.unit} · ${mdOf(prev.read_on)}` : `첫 기록 · ${m.unit}`}</small></span>
+          <input class="mt-v" inputmode="decimal" autocomplete="off" value="${cur ? fmtRead(cur.value).replace(/,/g, "") : ""}" placeholder="${prev ? fmtRead(prev.value).replace(/,/g, "") : "0"}">
+          <span class="mt-use"></span>
+        </div>
+        <div class="mt-warn" hidden><span class="t"></span><button type="button" class="mt-swap-btn"></button></div>
+        <div class="mt-swap" hidden>
+          <div class="row-2">
+            <label>옛 계량기 마지막 값<input class="mt-old" inputmode="decimal" autocomplete="off" placeholder="모르면 비워 두기" value="${cur?.replaced && cur.old_end != null ? Number(cur.old_end) : ""}"></label>
+            <label>새 계량기 시작값<input class="mt-new" inputmode="decimal" autocomplete="off" value="${cur?.replaced ? Number(cur.new_start) : 0}"></label>
+          </div>
+          <p class="fine" style="margin-top:6px">마지막 값을 모르면 이 구간 사용량만 비고, 다음 달부터 다시 이어져요.</p>
+        </div>`;
+      wrap.appendChild(el);
+      const it = { m, cur, prev, next, el, replaced: !!cur?.replaced };
+      el.querySelectorAll("input").forEach((inp) => inp.addEventListener("input", () => check(it)));
+      el.querySelector(".mt-swap-btn").onclick = () => { it.replaced = !it.replaced; check(it); };
+      check(it);
+      return it;
+    });
+    $("mt-gap").textContent = lastPrev ? `지난번(${mdOf(lastPrev)})에서 ${dayNum(date) - dayNum(lastPrev)}일` : "";
+    updateCount();
+  };
+  const check = (it) => {
+    const { m, prev, next, el } = it;
+    const inp = el.querySelector(".mt-v"), use = el.querySelector(".mt-use"), warn = el.querySelector(".mt-warn");
+    const v = parseEuroNum(inp.value);
+    const has = inp.value.trim() !== "" && !isNaN(v);
+    el.querySelector(".mt-swap").hidden = !it.replaced;
+    let msg = "", bad = false, u = null;
+    if (has && prev) {
+      if (it.replaced) {
+        const oe = parseEuroNum(el.querySelector(".mt-old").value), ns = parseEuroNum(el.querySelector(".mt-new").value);
+        u = meterUse(Number(prev.value), { replaced: true, value: v, old_end: isNaN(oe) ? null : oe, new_start: isNaN(ns) ? 0 : ns });
+      } else {
+        u = v - Number(prev.value);
+        if (u < 0) { msg = "지난번보다 작아요 — 자릿수 확인"; bad = true; u = null; }
+      }
+    }
+    if (has && !it.replaced && next && !next.replaced && v > Number(next.value)) {
+      msg = `다음 기록(${mdOf(next.read_on)} ${fmtRead(next.value)})보다 커요`; bad = true;
+    }
+    if (it.replaced) msg = "계량기 교체로 기록";
+    use.textContent = u != null ? `+${fmtUse(m, u)}` : has && it.replaced ? "교체" : "";
+    use.classList.toggle("warn", bad);
+    inp.classList.toggle("warn", bad);
+    warn.hidden = !msg;
+    warn.classList.toggle("ok", it.replaced);
+    warn.querySelector(".t").textContent = msg;
+    const swapBtn = warn.querySelector(".mt-swap-btn");
+    swapBtn.textContent = it.replaced ? "교체 취소" : "계량기 교체됨";
+    swapBtn.hidden = !it.replaced && !(bad && prev && v < Number(prev.value));
+    updateCount();
+  };
+  const updateCount = () => {
+    const n = items.filter((it) => it.el.querySelector(".mt-v").value.trim() !== "").length;
+    $("mt-save").textContent = `저장 (${n}/${METERS.length})`;
+  };
+  $("mt-date").addEventListener("change", render);
+  render();
+
+  $("mt-save").onclick = async () => {
+    const date = $("mt-date").value || todayStr();
+    const inserts = [], updates = [], deletes = [];
+    for (const it of items) {
+      const raw = it.el.querySelector(".mt-v").value.trim();
+      if (!raw) { if (it.cur) deletes.push(it.cur.id); continue; }
+      const v = parseEuroNum(raw);
+      if (isNaN(v) || v < 0) return toast(`${it.m.name} 숫자를 확인하세요`);
+      const r3 = (x) => Math.round(x * 1000) / 1000;
+      const oe = parseEuroNum(it.el.querySelector(".mt-old").value), ns = parseEuroNum(it.el.querySelector(".mt-new").value);
+      const row = {
+        read_on: date, meter: it.m.key, value: r3(v), replaced: it.replaced,
+        old_end: it.replaced && !isNaN(oe) ? r3(oe) : null,
+        new_start: it.replaced && !isNaN(ns) ? r3(ns) : 0,
+      };
+      if (it.cur) updates.push({ id: it.cur.id, row }); else inserts.push(row);
+    }
+    if (!inserts.length && !updates.length && !deletes.length) return toast("숫자를 하나 이상 입력하세요");
+    if (deletes.length && !confirm(`비운 ${deletes.length}개 기록을 삭제할까요?`)) return;
+    const btn = $("mt-save"); btn.disabled = true;
+    const now = new Date().toISOString();
+    const res = await Promise.all([
+      inserts.length ? sb.from("meter_readings").insert(inserts) : { error: null },
+      ...updates.map((u) => sb.from("meter_readings").update(u.row).eq("id", u.id)),
+      ...deletes.map((id) => sb.from("meter_readings").update({ deleted_at: now }).eq("id", id)),
+    ]);
+    btn.disabled = false;
+    const err = res.find((r) => r.error)?.error;
+    if (err) return toast("저장 실패: " + err.message, 4000);
+    refreshMeterStatus();
+    toast(`검침 ${inserts.length + updates.length}개 저장됨${deletes.length ? ` · ${deletes.length}개 삭제` : ""}`);
+    back();
+  };
+}
+
+// ── 사용량 추이 (계량기별 12개월 막대 + 작년 같은 달 대비, 아래에 기록 목록) ──
+async function openMeterTrend() {
+  openModal(`
+    <div class="section-head"><h3 style="margin:0">사용량 추이</h3></div>
+    <div id="mt-body"><p class="empty">불러오는 중…</p></div>`);
+  try { await loadMeters(); }
+  catch (e) { if ($("mt-body")) $("mt-body").innerHTML = `<p class="empty">${meterErrMsg(e)}</p>`; return; }
+  if (!$("mt-body")) return;   // 로딩 중 모달이 닫힘
+
+  const monthly = Object.fromEntries(METERS.map((m) => [m.key, meterMonthly(m.key)]));
+  const allYm = [...new Set(Object.values(monthly).flatMap(Object.keys))].sort();
+  const lastYm = allYm[allYm.length - 1] ?? null;
+  let sel = lastYm;
+  const reopen = () => openMeterTrend();
+
+  const dates = [...new Set(meterRows.map((r) => r.read_on))].sort().reverse();
+  const listHtml = dates.map((d) => {
+    const names = METERS.filter((m) => meterRows.some((r) => r.read_on === d && r.meter === m.key)).map((m) => m.name);
+    return `<button type="button" class="lrow" data-date="${d}">
+      <span class="d" style="min-width:72px">${d.slice(0, 4)}.${mdOf(d).replace("/", ".")}</span>
+      <span class="memo">${names.join(" · ")}</span>
+      <span class="amt" style="font-size:.74rem;color:var(--ink-2)">${names.length}/${METERS.length}</span></button>`;
+  }).join("");
+
+  const render = () => {
+    const body = $("mt-body"); if (!body) return;
+    const months = lastYm ? Array.from({ length: 12 }, (_, i) => ymAdd(lastYm, i - 11)) : [];
+    const base = sel ? ymAdd(sel, -12) : null;
+    const cards = METERS.map((m) => {
+      const mo = monthly[m.key];
+      const v = sel != null ? mo[sel] : undefined;
+      let dl = "—", cls = "";
+      if (v != null && mo[base] != null && mo[base] > 0) {
+        const p = Math.round((v / mo[base] - 1) * 100);
+        dl = `작년 ${p > 0 ? "+" : p < 0 ? "−" : "±"}${Math.abs(p)}%`;   // ▴는 이 폰트에서 마이너스처럼 보여서 안 씀
+        cls = p > 3 ? "up" : p < -3 ? "down" : "";
+      }
+      const max = Math.max(...months.map((k) => mo[k] ?? 0), 0) || 1;
+      const W = 300, H = 46, bw = W / 12;
+      const bars = months.map((k, i) => {
+        const val = mo[k];
+        const h = val == null ? 0 : Math.max(1.5, (val / max) * (H - 14));
+        const bar = val == null ? "" : `<rect x="${(i * bw + 2).toFixed(1)}" y="${(H - 11 - h).toFixed(1)}" width="${(bw - 4).toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="var(--m-${m.key})" opacity="${k === sel ? 1 : 0.35}"/>`;
+        const mm = Number(k.slice(5));
+        const lbl = i === 0 || mm === 1 || k === sel
+          ? `<text x="${(i * bw + bw / 2).toFixed(1)}" y="${H - 1}" text-anchor="middle" font-size="8" font-weight="${k === sel ? 800 : 500}" fill="var(--ink-2)">${mm === 1 || i === 0 ? `'${k.slice(2, 4)}.${mm}` : `${mm}월`}</text>` : "";
+        return bar + lbl + `<rect data-ym="${k}" x="${(i * bw).toFixed(1)}" y="0" width="${bw.toFixed(1)}" height="${H}" fill="transparent"/>`;
+      }).join("");
+      return `<div class="mt-card">
+        <div class="h"><span class="mdot" style="background:var(--m-${m.key})"></span><span class="n">${m.name}</span>
+          <span class="v">${v != null ? fmtUse(m, v) : "—"}<small>${m.unit}</small></span><span class="dl ${cls}">${dl}</span></div>
+        <svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${bars}</svg></div>`;
+    }).join("");
+
+    body.innerHTML = `
+      ${sel ? `<p class="ct-label">${sel.slice(0, 4)}년 ${Number(sel.slice(5))}월 · 작년 같은 달 대비</p>${cards}
+        <p class="an-note">막대를 누르면 그 달로 · 두 기록 사이 사용량을 일수로 나눠 달마다 배분 · 기록이 하루라도 비는 달은 빠져요</p>`
+      : `<p class="empty">기록이 두 번 이상 쌓이면 월별 사용량이 보여요</p>`}
+      <div class="section-head" style="margin-top:20px"><h2 style="margin:0">기록 · ${dates.length}회</h2><button type="button" class="btn-ghost" id="mt-add">+ 기록</button></div>
+      <div class="sheet" style="margin-top:8px">${listHtml || `<p class="empty">기록 없음</p>`}</div>`;
+    body.querySelectorAll("rect[data-ym]").forEach((r) => r.onclick = () => { sel = r.dataset.ym; render(); });
+    body.querySelectorAll("[data-date]").forEach((b) => b.onclick = () => openMeterForm(b.dataset.date, reopen));
+    $("mt-add").onclick = () => openMeterForm(todayStr(), reopen);
+  };
+  render();
+}
+
 // ── 내보내기 ──
 $("export-csv").addEventListener("click", async () => {
   const { data, error } = await sb.from("transactions")
@@ -1757,7 +2032,7 @@ $("export-snap").addEventListener("click", async () => {
 });
 $("export-json").addEventListener("click", async () => {
   const names = ["transactions", "recurring_rules", "recurring_occurrences", "categories", "accounts", "trips"];
-  const optional = ["holdings", "portfolio_snapshots", "tr_interest"];  // 006 미실행이어도 백업은 동작
+  const optional = ["holdings", "portfolio_snapshots", "tr_interest", "meter_readings"];  // 006·010 미실행이어도 백업은 동작
   const dump = { exported_at: new Date().toISOString(), app: "pairfolio" };
   for (const n of names) {
     const { data, error } = await sb.from(n).select("*");
@@ -1787,6 +2062,7 @@ document.querySelectorAll("#tabbar button").forEach((b) => {
     if (b.dataset.tab === "stats") loadRefs().then(renderStats);
     if (b.dataset.tab === "assets") renderAssets();
     if (b.dataset.tab === "more") loadRefs().then(() => { renderRules(); renderMore(); });
+    if (b.dataset.tab === "add" || b.dataset.tab === "more") refreshMeterStatus();
   });
 });
 

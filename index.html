@@ -43,6 +43,11 @@
 
   <!-- 입력 -->
   <main id="tab-add" class="tab">
+    <div id="meter-nudge" class="as-nudge mt-nudge" hidden>
+      <span id="meter-nudge-text"></span>
+      <button type="button" class="today-btn" id="meter-nudge-go">기록하기</button>
+      <button type="button" class="clear-btn" id="meter-nudge-x" aria-label="이번 달 알림 닫기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+    </div>
     <p class="field-label">오늘 쓴 돈</p>
     <div class="amount-row">
       <input id="add-amount" type="text" inputmode="decimal" placeholder="0" autocomplete="off">
@@ -96,7 +101,10 @@
 
   <!-- 더보기 -->
   <main id="tab-more" class="tab" hidden>
-    <div class="section-head">
+    <h2 style="margin-top:6px">검침</h2>
+    <button id="meter-new" class="card-row" type="button"><span class="name">검침 기록</span><span class="sub" id="meter-last"></span></button>
+    <button id="meter-trend" class="card-row" type="button"><span class="name">사용량 추이</span><span class="sub">계량기 5개</span></button>
+    <div class="section-head" style="margin-top:24px">
       <h2>반복 규칙</h2>
       <button id="rule-new" class="btn-ghost">+ 추가</button>
     </div>
@@ -114,7 +122,7 @@
     <div id="account-list"></div>
     <h2>계정</h2>
     <button id="logout" class="btn-ghost">로그아웃</button>
-    <p class="fine">온라인 전용 · 저장 실패분은 기기에 보관 후 재전송 · v2.5</p>
+    <p class="fine">온라인 전용 · 저장 실패분은 기기에 보관 후 재전송 · v2.6</p>
   </main>
 
   <!-- 탭 바 -->
