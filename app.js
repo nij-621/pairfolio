@@ -1550,7 +1550,7 @@ function openSnapshotForm(ym) {
     const updateSum = () => {
       let sum = 0, any = false;
       wrap.querySelectorAll("input[data-hid]").forEach((inp) => {
-        const v = parseEuroNum(inp.value);
+        const v = parseEuroNum(rawOf(inp));
         if (!isNaN(v)) { sum += v; any = true; }
       });
       const d = prevTotal != null ? sum - prevTotal : null;
@@ -1575,7 +1575,7 @@ function openSnapshotForm(ym) {
   $("sn-save").onclick = async () => {
     const rows = [];
     $("sn-rows").querySelectorAll("input[data-hid]").forEach((inp) => {
-      const v = parseEuroNum(inp.value);
+      const v = parseEuroNum(rawOf(inp));
       if (!isNaN(v) && v >= 0) rows.push({ ym, holding_id: inp.dataset.hid, value_eur: Math.round(v * 100) / 100 });
     });
     if (!rows.length) return toast("평가액을 입력하세요");
@@ -1741,6 +1741,19 @@ async function loadMeters() {
 const meterErrMsg = (e) => /does not exist|relation|schema cache/i.test(e?.message ?? "")
   ? "migrations/010_meter_readings.sql을 SQL Editor에서 먼저 실행하세요" : "불러오기 실패";
 const fmtRead = (v) => Number(v).toLocaleString("en-US", { maximumFractionDigits: 3 });
+// 입력칸: 포커스 밖에선 2,358처럼 묶어 보여 주고, 편집할 땐 친 그대로 (쉼표 소수점 입력 "417,1"과 안 겹치게)
+const rawOf = (inp) => inp.dataset.raw ?? inp.value;
+function bindGrouped(inp) {
+  inp.dataset.raw = inp.value;
+  const show = () => {
+    const raw = inp.dataset.raw, v = parseEuroNum(raw);
+    inp.value = raw.trim() === "" || isNaN(v) ? raw : fmtRead(v);
+  };
+  inp.addEventListener("focus", () => { inp.value = inp.dataset.raw; });
+  inp.addEventListener("input", () => { inp.dataset.raw = inp.value; });
+  inp.addEventListener("blur", show);
+  show();
+}
 const fmtUse = (m, v) => Number(v).toLocaleString("en-US", { minimumFractionDigits: m.dp, maximumFractionDigits: m.dp });
 const dayNum = (s) => Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10)) / 864e5;
 const mdOf = (s) => `${Number(s.slice(5, 7))}/${Number(s.slice(8, 10))}`;
@@ -1834,7 +1847,7 @@ async function openMeterForm(dateStr, after) {
         <div class="mt-row">
           <span class="mdot" style="background:var(--m-${m.key})"></span>
           <span class="lb">${m.name}<small>${prev ? `지난번 ${fmtRead(prev.value)} ${m.unit} · ${mdOf(prev.read_on)}` : `첫 기록 · ${m.unit}`}</small></span>
-          <input class="mt-v" inputmode="decimal" autocomplete="off" value="${cur ? fmtRead(cur.value).replace(/,/g, "") : ""}" placeholder="${prev ? fmtRead(prev.value).replace(/,/g, "") : "0"}">
+          <input class="mt-v" inputmode="decimal" autocomplete="off" value="${cur ? fmtRead(cur.value).replace(/,/g, "") : ""}" placeholder="${prev ? fmtRead(prev.value) : "0"}">
           <span class="mt-use"></span>
         </div>
         <div class="mt-warn" hidden><span class="t"></span><button type="button" class="mt-swap-btn"></button></div>
@@ -1847,7 +1860,7 @@ async function openMeterForm(dateStr, after) {
         </div>`;
       wrap.appendChild(el);
       const it = { m, cur, prev, next, el, replaced: !!cur?.replaced };
-      el.querySelectorAll("input").forEach((inp) => inp.addEventListener("input", () => check(it)));
+      el.querySelectorAll("input").forEach((inp) => { bindGrouped(inp); inp.addEventListener("input", () => check(it)); });
       el.querySelector(".mt-swap-btn").onclick = () => { it.replaced = !it.replaced; check(it); };
       check(it);
       return it;
@@ -1858,13 +1871,13 @@ async function openMeterForm(dateStr, after) {
   const check = (it) => {
     const { m, prev, next, el } = it;
     const inp = el.querySelector(".mt-v"), use = el.querySelector(".mt-use"), warn = el.querySelector(".mt-warn");
-    const v = parseEuroNum(inp.value);
-    const has = inp.value.trim() !== "" && !isNaN(v);
+    const v = parseEuroNum(rawOf(inp));
+    const has = rawOf(inp).trim() !== "" && !isNaN(v);
     el.querySelector(".mt-swap").hidden = !it.replaced;
     let msg = "", bad = false, u = null;
     if (has && prev) {
       if (it.replaced) {
-        const oe = parseEuroNum(el.querySelector(".mt-old").value), ns = parseEuroNum(el.querySelector(".mt-new").value);
+        const oe = parseEuroNum(rawOf(el.querySelector(".mt-old"))), ns = parseEuroNum(rawOf(el.querySelector(".mt-new")));
         u = meterUse(Number(prev.value), { replaced: true, value: v, old_end: isNaN(oe) ? null : oe, new_start: isNaN(ns) ? 0 : ns });
       } else {
         u = v - Number(prev.value);
@@ -1887,7 +1900,7 @@ async function openMeterForm(dateStr, after) {
     updateCount();
   };
   const updateCount = () => {
-    const n = items.filter((it) => it.el.querySelector(".mt-v").value.trim() !== "").length;
+    const n = items.filter((it) => rawOf(it.el.querySelector(".mt-v")).trim() !== "").length;
     $("mt-save").textContent = `저장 (${n}/${METERS.length})`;
   };
   $("mt-date").addEventListener("change", render);
@@ -1897,12 +1910,12 @@ async function openMeterForm(dateStr, after) {
     const date = $("mt-date").value || todayStr();
     const inserts = [], updates = [], deletes = [];
     for (const it of items) {
-      const raw = it.el.querySelector(".mt-v").value.trim();
+      const raw = rawOf(it.el.querySelector(".mt-v")).trim();
       if (!raw) { if (it.cur) deletes.push(it.cur.id); continue; }
       const v = parseEuroNum(raw);
       if (isNaN(v) || v < 0) return toast(`${it.m.name} 숫자를 확인하세요`);
       const r3 = (x) => Math.round(x * 1000) / 1000;
-      const oe = parseEuroNum(it.el.querySelector(".mt-old").value), ns = parseEuroNum(it.el.querySelector(".mt-new").value);
+      const oe = parseEuroNum(rawOf(it.el.querySelector(".mt-old"))), ns = parseEuroNum(rawOf(it.el.querySelector(".mt-new")));
       const row = {
         read_on: date, meter: it.m.key, value: r3(v), replaced: it.replaced,
         old_end: it.replaced && !isNaN(oe) ? r3(oe) : null,
