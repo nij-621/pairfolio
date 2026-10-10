@@ -377,6 +377,7 @@ button.an-tile { width: 100%; font: inherit; color: inherit; cursor: pointer; }
 .mt-card .v small { font-size: .64rem; color: var(--ink-2); font-weight: 700; margin-left: 2px; }
 .mt-card .dl { font-size: .64rem; font-weight: 800; min-width: 62px; text-align: right; white-space: nowrap; color: var(--ink-2); }
 .mt-card .dl.up { color: #b0483a; } .mt-card .dl.down { color: #5c7a48; }
+.mt-src { font-size: .62rem; font-weight: 700; color: var(--ink-2); text-align: right; margin-top: 1px; font-variant-numeric: tabular-nums; }
 .mt-card svg { display: block; width: 100%; height: auto; margin-top: 6px; }
 
 /* ── 배너/토스트 ── */

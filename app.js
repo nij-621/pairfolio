@@ -1722,8 +1722,8 @@ function openHoldingForm(h) {
 }
 
 // ─────────────────────────────────────────── 검침 (더보기 + 입력 탭 알림 띠)
-// DB엔 기기에 찍힌 누적 숫자만. 월 사용량 = 두 기록 차이를 일수로 나눠 달력 월에 배분
-// → 읽는 날이 매번 달라도 추이가 안 흔들림. 증감은 작년 같은 달 대비 (3개월 평균은 계절만 보여 줘서 안 씀).
+// DB엔 기기에 찍힌 누적 숫자만. 월 사용량 = 앞 기록과의 차이 그대로 (일수 배분은 2026-10-10에 폐기 — 기록한 그대로 보고 싶음).
+// 증감은 작년 같은 달 대비 (3개월 평균은 계절만 보여 줘서 안 씀).
 // 결정 배경: 작업실 .grill/utility-meter-readings.md
 const METERS = [
   { key: "cold", name: "냉수", unit: "m³",  dp: 1 },
@@ -1765,24 +1765,21 @@ function meterUse(prevVal, b) {
     : Number(b.value) - prevVal;
   return u >= 0 ? u : null;
 }
-// 계량기별 달력 월 사용량 — 하루도 빠짐없이 덮인 달만 (계산 불가 구간이 낀 달·진행 중인 달은 빠짐)
+// 기록이 어느 달 몫인지: 15일 이전 = 지난달 (11/1 기록 → 10월), 16일 이후 = 그달 (9/30 기록 → 9월)
+const meterYm = (s) => (Number(s.slice(8, 10)) <= 15 ? ymAdd(s.slice(0, 7), -1) : s.slice(0, 7));
+// 계량기별 월 사용량 = 그달 기록 − 바로 앞 기록, 일수 보정 없이 그대로 (2026-10-10 사용자 결정)
+// → { ym: { v, n: 몇 개월치, d: 기록 날짜 } }. 한 달 건너뛰면 다음 기록 달에 n개월치로 몰아서 표시
 function meterMonthly(key) {
   const rs = meterRows.filter((r) => r.meter === key);
-  const sum = {}, cover = {};
+  const out = {};
   for (let i = 1; i < rs.length; i++) {
     const u = meterUse(Number(rs[i - 1].value), rs[i]);
     if (u == null) continue;
-    const d0 = dayNum(rs[i - 1].read_on), d1 = dayNum(rs[i].read_on);
-    for (let d = d0; d < d1; d++) {
-      const ym = new Date(d * 864e5).toISOString().slice(0, 7);
-      sum[ym] = (sum[ym] ?? 0) + u / (d1 - d0);
-      cover[ym] = (cover[ym] ?? 0) + 1;
-    }
-  }
-  const out = {};
-  for (const ym of Object.keys(sum)) {
-    const [y, m] = ym.split("-").map(Number);
-    if (cover[ym] === new Date(Date.UTC(y, m, 0)).getUTCDate()) out[ym] = sum[ym];
+    const ym = meterYm(rs[i].read_on), from = meterYm(rs[i - 1].read_on);
+    const [y1, m1] = from.split("-").map(Number), [y2, m2] = ym.split("-").map(Number);
+    const n = Math.max(1, (y2 - y1) * 12 + (m2 - m1));
+    const o = out[ym];   // 같은 달 몫 기록이 둘이면 합침
+    out[ym] = o ? { v: o.v + u, n: Math.max(o.n, n), d: rs[i].read_on } : { v: u, n, d: rs[i].read_on };
   }
   return out;
 }
@@ -1972,19 +1969,21 @@ async function openMeterTrend() {
     const base = sel ? ymAdd(sel, -12) : null;
     const cards = METERS.map((m) => {
       const mo = monthly[m.key];
-      const v = sel != null ? mo[sel] : undefined;
+      const cur = sel != null ? mo[sel] : undefined, v = cur?.v, prevY = mo[base];
       let dl = "—", cls = "";
-      if (v != null && mo[base] != null && mo[base] > 0) {
-        const p = Math.round((v / mo[base] - 1) * 100);
+      // 몇 개월치가 섞인 달끼리는 비교 안 함
+      if (cur && prevY && cur.n === 1 && prevY.n === 1 && prevY.v > 0) {
+        const p = Math.round((v / prevY.v - 1) * 100);
         dl = `작년 ${p > 0 ? "+" : p < 0 ? "−" : "±"}${Math.abs(p)}%`;   // ▴는 이 폰트에서 마이너스처럼 보여서 안 씀
         cls = p > 3 ? "up" : p < -3 ? "down" : "";
       }
-      const max = Math.max(...months.map((k) => mo[k] ?? 0), 0) || 1;
+      const max = Math.max(...months.map((k) => mo[k]?.v ?? 0), 0) || 1;
       const W = 300, H = 46, bw = W / 12;
       const bars = months.map((k, i) => {
-        const val = mo[k];
-        const h = val == null ? 0 : Math.max(1.5, (val / max) * (H - 14));
-        const bar = val == null ? "" : `<rect x="${(i * bw + 2).toFixed(1)}" y="${(H - 11 - h).toFixed(1)}" width="${(bw - 4).toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="var(--m-${m.key})" opacity="${k === sel ? 1 : 0.35}"/>`;
+        const val = mo[k]?.v;
+        const h = val == null ? 0 : Math.max(1.5, (val / max) * (H - 18));
+        const bar = val == null ? "" : `<rect x="${(i * bw + 2).toFixed(1)}" y="${(H - 11 - h).toFixed(1)}" width="${(bw - 4).toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="var(--m-${m.key})" opacity="${k === sel ? 1 : 0.35}"/>`
+          + (mo[k]?.n > 1 ? `<text x="${(i * bw + bw / 2).toFixed(1)}" y="${(H - 13 - h).toFixed(1)}" text-anchor="middle" font-size="7" font-weight="800" fill="var(--ink-2)">${mo[k].n}개월</text>` : "");
         const mm = Number(k.slice(5));
         const lbl = i === 0 || mm === 1 || k === sel
           ? `<text x="${(i * bw + bw / 2).toFixed(1)}" y="${H - 1}" text-anchor="middle" font-size="8" font-weight="${k === sel ? 800 : 500}" fill="var(--ink-2)">${mm === 1 || i === 0 ? `'${k.slice(2, 4)}.${mm}` : `${mm}월`}</text>` : "";
@@ -1993,12 +1992,13 @@ async function openMeterTrend() {
       return `<div class="mt-card">
         <div class="h"><span class="mdot" style="background:var(--m-${m.key})"></span><span class="n">${m.name}</span>
           <span class="v">${v != null ? fmtUse(m, v) : "—"}<small>${m.unit}</small></span><span class="dl ${cls}">${dl}</span></div>
+        ${cur ? `<p class="mt-src">${mdOf(cur.d)} 기록${cur.n > 1 ? ` · ${cur.n}개월치` : ""}</p>` : ""}
         <svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${bars}</svg></div>`;
     }).join("");
 
     body.innerHTML = `
       ${sel ? `<p class="ct-label">${sel.slice(0, 4)}년 ${Number(sel.slice(5))}월 · 작년 같은 달 대비</p>${cards}
-        <p class="an-note">막대를 누르면 그 달로 · 두 기록 사이 사용량을 일수로 나눠 달마다 배분 · 기록이 하루라도 비는 달은 빠져요</p>`
+        <p class="an-note">막대를 누르면 그 달로 · 사용량 = 앞 기록과의 차이 그대로 · 15일 이전 기록은 지난달, 16일 이후는 그달 몫 · 몇 개월치가 섞인 달은 작년 비교 안 함</p>`
       : `<p class="empty">기록이 두 번 이상 쌓이면 월별 사용량이 보여요</p>`}
       <div class="section-head" style="margin-top:20px"><h2 style="margin:0">기록 · ${dates.length}회</h2><button type="button" class="btn-ghost" id="mt-add">+ 기록</button></div>
       <div class="sheet" style="margin-top:8px">${listHtml || `<p class="empty">기록 없음</p>`}</div>`;
