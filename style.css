@@ -366,6 +366,10 @@ button.an-tile { width: 100%; font: inherit; color: inherit; cursor: pointer; }
 .mt-swap-btn { font-size: .68rem; font-weight: 800; color: var(--ink); text-decoration: underline; padding: 2px 0; }
 .mt-swap { margin: 6px 0 0 18px; padding: 8px 10px 10px; border: 1px dashed var(--card-line); border-radius: 10px; }
 .mt-swap .row-2 label { margin-top: 0; }
+.mt-li { display: flex; align-items: center; gap: 4px; border-bottom: 1px dashed #e6e0ca; }
+.mt-li:last-child { border-bottom: 0; }
+.mt-li .lrow { flex: 1; min-width: 0; border-bottom: 0; }
+.mt-li .clear-btn { margin-right: -6px; }
 .mt-card { background: var(--card); border: 1px solid var(--card-line); border-radius: 12px; padding: 10px 13px 8px; margin-bottom: 8px; }
 .mt-card .h { display: flex; align-items: baseline; gap: 7px; }
 .mt-card .n { flex: 1; font-size: .8rem; font-weight: 800; }

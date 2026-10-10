@@ -1946,10 +1946,11 @@ async function openMeterTrend() {
   const dates = [...new Set(meterRows.map((r) => r.read_on))].sort().reverse();
   const listHtml = dates.map((d) => {
     const names = METERS.filter((m) => meterRows.some((r) => r.read_on === d && r.meter === m.key)).map((m) => m.name);
-    return `<button type="button" class="lrow" data-date="${d}">
+    return `<div class="mt-li"><button type="button" class="lrow" data-date="${d}">
       <span class="d" style="min-width:72px">${d.slice(0, 4)}.${mdOf(d).replace("/", ".")}</span>
       <span class="memo">${names.join(" · ")}</span>
-      <span class="amt" style="font-size:.74rem;color:var(--ink-2)">${names.length}/${METERS.length}</span></button>`;
+      <span class="amt" style="font-size:.74rem;color:var(--ink-2)">${names.length}/${METERS.length}</span></button>
+      <button type="button" class="clear-btn" data-del="${d}" aria-label="${d} 기록 삭제">${X_SVG}</button></div>`;
   }).join("");
 
   const render = () => {
@@ -1990,6 +1991,14 @@ async function openMeterTrend() {
       <div class="sheet" style="margin-top:8px">${listHtml || `<p class="empty">기록 없음</p>`}</div>`;
     body.querySelectorAll("rect[data-ym]").forEach((r) => r.onclick = () => { sel = r.dataset.ym; render(); });
     body.querySelectorAll("[data-date]").forEach((b) => b.onclick = () => openMeterForm(b.dataset.date, reopen));
+    // X = 그날 기록 통째로 휴지통 (물리 삭제 없음)
+    body.querySelectorAll("[data-del]").forEach((b) => b.onclick = async () => {
+      const d = b.dataset.del, ids = meterRows.filter((r) => r.read_on === d).map((r) => r.id);
+      if (!confirm(`${d.slice(0, 4)}.${mdOf(d).replace("/", ".")} 검침 ${ids.length}개를 삭제할까요?`)) return;
+      const { error } = await sb.from("meter_readings").update({ deleted_at: new Date().toISOString() }).in("id", ids);
+      if (error) return toast("삭제 실패: " + error.message, 4000);
+      refreshMeterStatus(); toast(`검침 ${ids.length}개 삭제됨`); reopen();
+    });
     $("mt-add").onclick = () => openMeterForm(todayStr(), reopen);
   };
   render();
