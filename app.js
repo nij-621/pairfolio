@@ -1996,9 +1996,41 @@ async function openMeterTrend() {
         <svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${bars}</svg></div>`;
     }).join("");
 
+    // ── 누계 표: 최근 12개월(고른 달에서 끝남) + 연도별. 열 아래에 실제로 덮인 달 범위 (몇 달만 있는 해를 오해하지 않게)
+    const sumOf = (m, pick) => {
+      let v = 0, any = false;
+      for (const [k, o] of Object.entries(monthly[m.key])) if (pick(k)) { v += o.v; any = true; }
+      return any ? fmtUse(m, v) : "—";
+    };
+    const spanOf = (pick) => {   // 몇 개월치 기록은 앞쪽 달까지 덮은 것으로 침
+      let lo = null, hi = null;
+      for (const m of METERS) for (const [k, o] of Object.entries(monthly[m.key])) {
+        if (!pick(k)) continue;
+        const s = ymAdd(k, -(o.n - 1));
+        if (!lo || s < lo) lo = s;
+        if (!hi || k > hi) hi = k;
+      }
+      return lo ? [lo, hi] : null;
+    };
+    const yy = (k) => `'${k.slice(2, 4)}.${Number(k.slice(5))}`;
+    const winFrom = sel ? ymAdd(sel, -11) : null;
+    const cols = sel ? [
+      { t: "최근 12개월", pick: (k) => k >= winFrom && k <= sel, lbl: (s) => `${yy(s[0])}–${yy(s[1])}` },
+      ...[...new Set(allYm.map((k) => k.slice(0, 4)))].map((y) => ({
+        t: y, pick: (k) => k.startsWith(y),
+        lbl: (s) => { const a = Number((s[0] < `${y}-01` ? `${y}-01` : s[0]).slice(5)), b = Number(s[1].slice(5)); return a === b ? `${a}월` : `${a}–${b}월`; },
+      })),
+    ] : [];
+    const sumTable = cols.length ? `
+      <p class="an-sec">누계</p>
+      <div class="sheet mt-sum"><table>
+        <thead><tr><th></th>${cols.map((c) => { const s = spanOf(c.pick); return `<th>${c.t}<small>${s ? c.lbl(s) : ""}</small></th>`; }).join("")}</tr></thead>
+        <tbody>${METERS.map((m) => `<tr><td><span class="mdot" style="background:var(--m-${m.key})"></span>${m.name}<small>${m.unit}</small></td>${cols.map((c) => `<td>${sumOf(m, c.pick)}</td>`).join("")}</tr>`).join("")}</tbody>
+      </table></div>` : "";
+
     body.innerHTML = `
       ${sel ? `<p class="ct-label">${sel.slice(0, 4)}년 ${Number(sel.slice(5))}월 · 작년 같은 달 대비</p>${cards}
-        <p class="an-note">막대를 누르면 그 달로 · 사용량 = 앞 기록과의 차이 그대로 · 15일 이전 기록은 지난달, 16일 이후는 그달 몫 · 몇 개월치가 섞인 달은 작년 비교 안 함</p>`
+        <p class="an-note">막대를 누르면 그 달로 · 사용량 = 앞 기록과의 차이 그대로 · 15일 이전 기록은 지난달, 16일 이후는 그달 몫 · 몇 개월치가 섞인 달은 작년 비교 안 함</p>${sumTable}`
       : `<p class="empty">기록이 두 번 이상 쌓이면 월별 사용량이 보여요</p>`}
       <div class="section-head" style="margin-top:20px"><h2 style="margin:0">기록 · ${dates.length}회</h2><button type="button" class="btn-ghost" id="mt-add">+ 기록</button></div>
       <div class="sheet" style="margin-top:8px">${listHtml || `<p class="empty">기록 없음</p>`}</div>`;

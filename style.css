@@ -377,6 +377,16 @@ button.an-tile { width: 100%; font: inherit; color: inherit; cursor: pointer; }
 .mt-card .v small { font-size: .64rem; color: var(--ink-2); font-weight: 700; margin-left: 2px; }
 .mt-card .dl { font-size: .64rem; font-weight: 800; min-width: 62px; text-align: right; white-space: nowrap; color: var(--ink-2); }
 .mt-card .dl.up { color: #b0483a; } .mt-card .dl.down { color: #5c7a48; }
+.mt-sum { padding: 6px 10px; overflow-x: auto; }
+.mt-sum table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.mt-sum th, .mt-sum td { padding: 7px 4px; text-align: right; white-space: nowrap; font-size: .78rem; }
+.mt-sum th { font-size: .7rem; font-weight: 800; color: var(--ink); vertical-align: bottom; border-bottom: 1px solid var(--card-line); }
+.mt-sum th small, .mt-sum td small { display: block; font-size: .6rem; font-weight: 700; color: var(--ink-2); }
+.mt-sum td { font-weight: 800; border-bottom: 1px dashed #e6e0ca; }
+.mt-sum tr:last-child td { border-bottom: 0; }
+.mt-sum td:first-child { text-align: left; font-weight: 800; position: sticky; left: 0; background: var(--card); }
+.mt-sum td:first-child .mdot { display: inline-block; margin-right: 6px; vertical-align: middle; }
+.mt-sum td:first-child small { display: inline; margin-left: 4px; }
 .mt-src { font-size: .62rem; font-weight: 700; color: var(--ink-2); text-align: right; margin-top: 1px; font-variant-numeric: tabular-nums; }
 .mt-card svg { display: block; width: 100%; height: auto; margin-top: 6px; }
 
