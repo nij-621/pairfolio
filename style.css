@@ -166,8 +166,8 @@ h2 { font-size: .92rem; font-weight: 800; margin: 24px 0 8px; }
 }
 .today-chip:active { transform: translateY(-50%) scale(0.95); }
 .mo-arrow { font-size: .7rem; color: var(--ink-2); padding: 8px 10px; }
-#mo-label { font-family: "Nanum Myeongjo", serif; font-size: 1.15rem; font-weight: 700; min-width: 130px; text-align: center; }
-#mo-label .car { font-size: .6rem; color: var(--ink-2); margin-left: 4px; }
+#mo-label, #an-label { font-family: "Nanum Myeongjo", serif; font-size: 1.15rem; font-weight: 700; min-width: 130px; text-align: center; }
+#mo-label .car, #an-label .car { font-size: .6rem; color: var(--ink-2); margin-left: 4px; }
 .search-row {
   display: flex; align-items: center; gap: 8px;
   background: var(--card); border: 1px solid var(--card-line); border-radius: 10px;
@@ -215,14 +215,42 @@ h2 { font-size: .92rem; font-weight: 800; margin: 24px 0 8px; }
 .an-tile .t { font-size: .66rem; font-weight: 800; letter-spacing: .06em; color: var(--ink-2); }
 .an-tile .v { font-size: .95rem; font-weight: 800; margin-top: 4px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .an-tile .v.in { color: #0e6b4a; }
-.an-sec { font-size: .74rem; font-weight: 800; letter-spacing: .06em; color: var(--ink-2); margin: 22px 2px 8px; }
-.an-note { font-size: .68rem; color: var(--ink-2); margin: 6px 2px 0; }
-.cat-bars { background: var(--card); border: 1px solid var(--card-line); border-radius: 12px; padding: 12px 14px; }
-.cbar { display: grid; grid-template-columns: 76px 1fr auto; align-items: center; gap: 8px; padding: 6px 0; }
-.cbar .n { font-size: .76rem; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 분석 탭 글자 크기 4단계: 대표 숫자 2rem · 본문 .82rem · 라벨 .72rem · 주석 .7rem (+ 달 이름표 명조) */
+.an-hero {
+  display: block; width: 100%; text-align: left; font: inherit; color: inherit;
+  background: var(--card); border: 1.5px solid var(--ink); border-radius: 14px; padding: 16px 16px 14px;
+}
+.an-hero > span { display: block; }
+.an-hero .lab { display: flex; justify-content: space-between; font-size: .72rem; font-weight: 800; letter-spacing: .04em; color: var(--ink-2); }
+.an-hero .lab .more { font-weight: 700; letter-spacing: 0; }
+.an-hero .big { font-size: 2rem; font-weight: 800; line-height: 1.15; margin-top: 2px; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+.an-hero .big small { font-size: 1.1rem; font-weight: 700; margin-left: 3px; }
+.an-hero .cmp { font-size: .82rem; color: var(--ink-2); margin-top: 6px; font-variant-numeric: tabular-nums; }
+.an-hero .cmp .delta { font-size: inherit; font-weight: 800; }
+.an-hero .sub { display: grid; grid-template-columns: 1fr 1fr; margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--card-line); }
+.an-hero .sub > span + span { padding-left: 14px; border-left: 1px dashed var(--card-line); }
+.an-hero .sub span span { display: block; }
+.an-hero .sub .t { font-size: .72rem; font-weight: 800; letter-spacing: .04em; color: var(--ink-2); }
+.an-hero .sub .v { font-size: 1rem; font-weight: 800; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.an-hero .sub .v.in { color: #0e6b4a; }
+.an-hero .sub .ctx { font-size: .7rem; color: var(--ink-2); margin-top: 2px; }
+.an-sec { font-size: .72rem; font-weight: 800; letter-spacing: .04em; color: var(--ink-2); margin: 24px 2px 8px; }
+.an-note { font-size: .7rem; color: var(--ink-2); margin: 8px 2px 0; }
+.an-line { display: flex; justify-content: space-between; align-items: baseline; font-size: .82rem; padding: 10px 2px; border-top: 1px solid var(--card-line); border-bottom: 1px solid var(--card-line); font-variant-numeric: tabular-nums; }
+.an-line b { font-weight: 800; }
+.an-line span { font-size: .72rem; font-weight: 700; color: var(--ink-2); }
+.cat-bars { background: var(--card); border: 1px solid var(--card-line); border-radius: 12px; padding: 10px 14px 12px; }
+.cbar-head { display: flex; justify-content: space-between; font-size: .7rem; font-weight: 700; color: var(--ink-2); padding: 2px 0 6px; margin-bottom: 4px; border-bottom: 1px dashed var(--card-line); }
+.cbar { display: grid; grid-template-columns: 80px 1fr auto; align-items: center; gap: 8px; padding: 6px 0; }
+.cbar .n { font-size: .82rem; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cbar .track { height: 14px; border-radius: 0 4px 4px 0; background: #9a8f66; min-width: 2px; }
-.cbar .val { font-size: .76rem; font-weight: 800; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
-.cbar .val small { display: block; font-size: .62rem; font-weight: 700; color: var(--ink-2); }
+.cbar .val { font-size: .82rem; font-weight: 800; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.cbar .val small { display: block; font-size: .7rem; font-weight: 700; color: var(--ink-2); }
+/* 13위 이하 묶음 + 합계 — 막대 합이 지출 합계와 맞게 */
+.cbar.rest { border-top: 1px dashed var(--card-line); margin-top: 4px; padding-top: 10px; }
+.cbar.rest .n { color: var(--ink-2); }
+.cbar.rest .names { font-size: .7rem; font-weight: 700; color: var(--ink-2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cbar-sum { display: flex; justify-content: space-between; font-size: .7rem; font-weight: 800; color: var(--ink-2); margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--card-line); font-variant-numeric: tabular-nums; }
 /* 3개월 평균 대비 증감 — 증가 벽돌색·감소 이끼색 (▴▾로 방향도 표시) */
 small.delta.up { color: #b0483a; }
 small.delta.down { color: #5c7a48; }
@@ -250,7 +278,7 @@ button.an-tile { width: 100%; font: inherit; color: inherit; cursor: pointer; }
 .an-split .bar i { height: 100%; }
 .an-split .bar .k { background: var(--km); border-right: 2px solid var(--card); }
 .an-split .bar .m { background: var(--mk); }
-.an-split .lbl { display: flex; justify-content: space-between; font-size: .74rem; font-weight: 800; margin-top: 8px; font-variant-numeric: tabular-nums; }
+.an-split .lbl { display: flex; justify-content: space-between; font-size: .82rem; font-weight: 800; margin-top: 8px; font-variant-numeric: tabular-nums; }
 .an-split .lbl .k { color: var(--km); } .an-split .lbl .m { color: var(--mk); }
 
 /* ── 월 점프 피커 ── */

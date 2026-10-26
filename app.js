@@ -694,8 +694,14 @@ async function renderStats() {
   prevSpend /= 3;
 
   const rate = income > 0 ? Math.round(((income - spend) / income) * 100) : null;
-  const rows = Object.entries(catSum).sort((a, b) => b[1] - a[1]).slice(0, 12);
+  const sorted = Object.entries(catSum).sort((a, b) => b[1] - a[1]);
+  const rows = sorted.slice(0, 12);
+  const rest = sorted.slice(12);   // 13위 이하는 "그 외" 한 줄로 — 합계가 지출과 맞게
+  const restSum = rest.reduce((s, [, v]) => s + v, 0);
   const maxV = rows.length ? rows[0][1] : 1;
+  // 진행 중인 달이면 저축률이 아직 의미 없음을 표시
+  const today = todayStr();
+  const inProgress = anMonth === today.slice(0, 7);
 
   const deltaTxt = (curV, avgV) => {
     if (!avgV) return `<small class="delta">신규</small>`;
@@ -710,24 +716,37 @@ async function renderStats() {
   const subTotal = subRules.reduce((s, r) => s + Number(r.amount_eur) / CAD_DIV[r.cadence], 0);
 
   const pk = spend > 0 ? Math.round((spendKm / spend) * 100) : 50;
-  const totalDelta = deltaTxt(spend, prevSpend);
+  const cmpTxt = prevSpend
+    ? `직전 3개월 평균 ${fmtShort(prevSpend)} € 대비 ${deltaTxt(spend, prevSpend)}`
+    : `직전 3개월 기록 없음`;
 
   $("an-body").innerHTML = `
-    <div class="an-tiles">
-      <button type="button" class="an-tile" data-flow><p class="t">지출 €</p><p class="v">${fmtNum(spend)}</p></button>
-      <button type="button" class="an-tile" data-flow><p class="t">수입 €</p><p class="v in">${fmtNum(income)}</p></button>
-      <button type="button" class="an-tile" data-flow><p class="t">저축률</p><p class="v">${rate === null ? "—" : rate + "%"}</p></button>
-    </div>
-    <p class="an-note">지출은 소비만 — 대출 상환(이전)·투자 이체는 제외. 지출 3개월 평균 대비 ${totalDelta}</p>
+    <button type="button" class="an-hero" data-flow>
+      <span class="lab"><span>${inProgress ? "이번 달" : `${Number(lm)}월`} 지출</span><span class="more">추이 ›</span></span>
+      <span class="big">${fmtNum(spend)}<small>€</small></span>
+      <span class="cmp">${cmpTxt}</span>
+      <span class="sub">
+        <span><span class="t">수입</span><span class="v in">${fmtNum(income)} €</span></span>
+        <span><span class="t">저축률</span><span class="v">${rate === null ? "—" : rate + "%"}</span>${inProgress ? `<span class="ctx">진행 중 · ${Number(lm)}월 ${Number(today.slice(8))}일까지</span>` : ""}</span>
+      </span>
+    </button>
+    <p class="an-note">지출은 소비만 — 대출 상환(이전)·투자 이체는 제외</p>
 
-    <p class="an-sec">카테고리별 지출 · 직전 3개월 평균 대비</p>
+    <p class="an-sec">카테고리별 지출</p>
     <div class="cat-bars">
-      ${rows.length ? rows.map(([cid, v]) => `
+      ${rows.length ? `<div class="cbar-head"><span>카테고리</span><span>금액 · 3개월 평균 대비</span></div>` + rows.map(([cid, v]) => `
         <button type="button" class="cbar" data-cat="${cid}">
           <span class="n">${esc(catName(cid))}</span>
           <span class="track" style="width:${Math.max(2, Math.round((v / maxV) * 100))}%"></span>
           <span class="val">${fmtNum(v)}${deltaTxt(v, prevAvg[cid])}</span>
-        </button>`).join("") : `<p class="empty">이 달 지출이 없습니다</p>`}
+        </button>`).join("") + (rest.length ? `
+        <div class="cbar rest">
+          <span class="n">그 외 ${rest.length}개</span>
+          <span class="names">${rest.map(([cid, v]) => `${esc(catName(cid))} ${fmtNum(v)}`).join(" · ")}</span>
+          <span class="val">${fmtNum(restSum)}</span>
+        </div>` : "") + `
+        <div class="cbar-sum"><span>${sorted.length}개 카테고리 합계</span><span>${fmtNum(spend)} €</span></div>`
+        : `<p class="empty">이 달 지출이 없습니다</p>`}
     </div>
 
     <p class="an-sec">누가 결제했나</p>
@@ -736,14 +755,11 @@ async function renderStats() {
       <div class="lbl"><span class="k">규문 ${fmtNum(spendKm)} € (${pk}%)</span><span class="m">민경 ${fmtNum(spendMk)} € (${100 - pk}%)</span></div>
     </div>
 
-    <p class="an-sec">구독·자동이체 (월 환산)</p>
-    <div class="an-tiles" style="grid-template-columns: 1fr 1fr">
-      <div class="an-tile"><p class="t">월 환산 합계</p><p class="v">${fmtNum(subTotal)} €</p></div>
-      <div class="an-tile"><p class="t">활성 규칙</p><p class="v">${subRules.length}건</p></div>
-    </div>`;
+    <p class="an-sec">구독·자동이체</p>
+    <div class="an-line"><b>월 환산 ${fmtNum(subTotal)} €</b><span>활성 규칙 ${subRules.length}건</span></div>`;
   $("an-body").querySelectorAll(".cbar[data-cat]").forEach((b) =>
     b.onclick = () => openCatTrend(b.dataset.cat));
-  $("an-body").querySelectorAll(".an-tile[data-flow]").forEach((b) =>
+  $("an-body").querySelectorAll("[data-flow]").forEach((b) =>
     b.onclick = () => openFlowTrend());
 }
 
@@ -783,7 +799,7 @@ async function openCatTrend(catId) {
     </div>
     <p class="ct-label" id="ct-label">&nbsp;</p>
     <div id="ct-chart"><p class="empty">불러오는 중…</p></div>
-    <p class="fine" style="margin-top:10px">최대 = 이 기간에서 가장 컸던 달(연도별은 해)의 금액, 그래프 세로축의 천장 · 점선 = 이 기간의 월평균. 점을 누르면 그 달(해) 금액이 위에 표시돼요.</p>`);
+    <p class="fine" style="margin-top:10px">점선 = 이 기간 월평균 · 점을 누르면 그 달(해) 금액이 위에 표시돼요.</p>`);
   let res;
   try { res = await fetchCatMonthly(catId); }
   catch { if ($("ct-chart")) $("ct-chart").innerHTML = `<p class="empty">불러오기 실패</p>`; return; }
@@ -813,14 +829,19 @@ async function openCatTrend(catId) {
       vals = keys.map((k2) => byMonth[k2] ?? 0);
       labelOf = (i) => `${keys[i].slice(0, 4)}년 ${Number(keys[i].slice(5))}월 · ${fmtEur(vals[i])}`;
     }
-    const W = 340, H = 180, L = 6, R = 6, T = 16, B = 20;
+    // 세로축은 0이 아니라 데이터 범위에 맞춤 (1·2·5 단위로 반올림) — 0부터면 선이 위쪽에 납작하게 붙음
     const n = vals.length;
-    const max = Math.max(...vals, 1);
-    const x = (i) => n === 1 ? W / 2 : L + (i * (W - L - R)) / (n - 1);
-    const y = (v) => T + (1 - v / max) * (H - T - B);
+    const max = Math.max(...vals, 1), min = Math.min(...vals);
+    const rough = (max - min) / 3 || max;
+    const mag = 10 ** Math.floor(Math.log10(rough));
+    const unit = [1, 2, 5, 10].map((m) => m * mag).find((s) => s >= rough);
+    const lo = Math.floor(min / unit) * unit, hi = Math.ceil(max / unit) * unit;
+    const W = 340, H = 180, R = 6, T = 18, B = 20;
+    const L = 10 + `${fmtShort(hi)} €`.length * 5.4;   // 눈금 글자 폭만큼
+    const x = (i) => n === 1 ? (L + W - R) / 2 : L + (i * (W - L - R)) / (n - 1);
+    const y = (v) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
 
     const line = vals.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(" ");
-    const area = `${line} L${x(n - 1).toFixed(1)} ${H - B} L${x(0).toFixed(1)} ${H - B} Z`;
     // x축 라벨: 12개월은 3개월마다, 월 모드는 1월마다(기간 길면 짝수 해만), 연도별은 해마다
     const yearsSpan = Number(cur.slice(0, 4)) - Number((mode === "year" ? keys[0] : keys[0].slice(0, 4)));
     const ticks = keys.map((k2, i) => {
@@ -828,7 +849,7 @@ async function openCatTrend(catId) {
       if (mode === "12m") { if (i % 3 === 0) txt = `${Number(k2.slice(5))}월`; }
       else if (mode === "year") { if (yearsSpan <= 8 || Number(k2) % 2 === 0) txt = `'${k2.slice(2)}`; }
       else if (k2.slice(5) === "01" && (yearsSpan <= 6 || Number(k2.slice(0, 4)) % 2 === 0)) txt = `'${k2.slice(2, 4)}`;
-      return txt === null ? "" : `<text x="${x(i).toFixed(1)}" y="${H - 6}" text-anchor="middle" font-size="9" fill="var(--ink-2)">${txt}</text>`;
+      return txt === null ? "" : `<text x="${x(i).toFixed(1)}" y="${H - 6}" text-anchor="middle" font-size="9.5" fill="var(--ink-2)">${txt}</text>`;
     }).join("");
     const step = n === 1 ? W : (W - L - R) / (n - 1);
     const hits = vals.map((v, i) =>
@@ -837,9 +858,17 @@ async function openCatTrend(catId) {
       ? vals.map((v, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="2.6" fill="var(--ink)"/>`).join("")
       : "";
 
-    // 라벨은 종이색 테두리(halo)로 그래프 선 위에서도 읽히게, 평균선이 위쪽이면 라벨을 선 아래로
+    // 라벨은 종이색 테두리(halo)로 그래프 선 위에서도 읽히게
     const halo = `paint-order="stroke" stroke="var(--paper)" stroke-width="3.5" stroke-linejoin="round" pointer-events="none"`;
+    // 세로축 눈금 2개(아래·위 끝) — 0부터가 아님을 숫자로 알림
+    const yTicks = [lo, hi].map((t) => `
+        <line x1="${L}" x2="${W - R}" y1="${y(t).toFixed(1)}" y2="${y(t).toFixed(1)}" stroke="var(--card-line)"/>
+        <text x="${L - 5}" y="${(y(t) + 3.5).toFixed(1)}" text-anchor="end" font-size="9.5" fill="var(--ink-2)">${fmtShort(t)} €</text>`).join("");
+    // 가장 큰 달(해) 점 위에 "최대" 표시 — 양 끝 점이면 바깥으로 안 나가게 정렬
+    const mi = vals.indexOf(max);
+    const maxSvg = max > 1 ? `<text x="${x(mi).toFixed(1)}" y="${(y(max) - 7).toFixed(1)}" text-anchor="${n > 1 && mi === 0 ? "start" : n > 1 && mi === n - 1 ? "end" : "middle"}" font-size="9.5" font-weight="800" fill="var(--ink)" ${halo}>최대 ${fmtShort(max)}</text>` : "";
     // 월평균 점선 — 연도별 보기에선 표시하지 않음 (기간 전체 평균은 불필요, 점 탭 정보로 충분)
+    // 라벨은 왼쪽 — 오른쪽 끝은 선택된 이번 달 점과 겹침
     let avgSvg = "";
     if (mode !== "year") {
       const avg = vals.reduce((s, v) => s + v, 0) / n;
@@ -847,19 +876,18 @@ async function openCatTrend(catId) {
       const avgLabelY = avgY < 34 ? avgY + 13 : avgY - 5;
       avgSvg = `
         <line x1="${L}" y1="${avgY.toFixed(1)}" x2="${W - R}" y2="${avgY.toFixed(1)}" stroke="var(--ink-2)" stroke-dasharray="4 4" stroke-width="1"/>
-        <text x="${W - R}" y="${avgLabelY.toFixed(1)}" text-anchor="end" font-size="9" fill="var(--ink-2)" ${halo}>월평균 ${fmtShort(avg)} €</text>`;
+        <text x="${L + 4}" y="${avgLabelY.toFixed(1)}" font-size="9.5" fill="var(--ink-2)" ${halo}>월평균 ${fmtShort(avg)} €</text>`;
     }
     $("ct-chart").innerHTML = `
       <svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
-        <line x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}" stroke="var(--card-line)"/>
-        <path d="${area}" fill="rgba(38,38,32,.07)"/>
+        ${yTicks}
         <path d="${line}" fill="none" stroke="var(--ink)" stroke-width="1.8" stroke-linejoin="round"/>
         ${dots}
+        ${avgSvg}
         <circle id="ct-dot" r="4.2" fill="var(--paper)" stroke="var(--ink)" stroke-width="2" visibility="hidden"/>
+        ${maxSvg}
         ${hits}
         ${ticks}
-        <text x="${L}" y="10" font-size="9" fill="var(--ink-2)" ${halo}>최대 ${fmtShort(max)} €</text>
-        ${avgSvg}
       </svg>`;
     const dot = $("ct-dot");
     const select = (i) => {
