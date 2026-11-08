@@ -353,6 +353,28 @@ button.an-tile { width: 100%; font: inherit; color: inherit; cursor: pointer; }
   padding: 2px 7px; border: 1px solid var(--card-line); border-radius: 999px; white-space: nowrap;
 }
 #as-chart svg { width: 100%; height: auto; display: block; }
+/* 평가액 추이 — 자산군 색은 잉크·올리브·종이색 (파랑·빨강은 사람 뜻이라 안 씀) */
+:root { --c-stock: #3d3a30; --c-bond: #9a8f66; --c-cash: #e6e2cf; }
+.an-sec.as-th { display: flex; justify-content: space-between; align-items: center; }
+.as-seg { display: inline-flex; border: 1px solid var(--card-line); border-radius: 8px; overflow: hidden; background: var(--card); letter-spacing: 0; }
+.as-seg button { padding: 4px 11px; font-size: .7rem; font-weight: 800; color: var(--ink-2); }
+.as-seg button.on { background: var(--ink); color: var(--paper); }
+#as-label { margin-bottom: 2px; }
+.as-delta { font-size: .72rem; font-weight: 700; color: var(--ink-2); margin: 0 2px 8px; font-variant-numeric: tabular-nums; }
+.as-delta b { font-weight: 800; }
+.as-delta .up, .as-mix .d.up { color: #5c7a48; }   /* 자산은 늘면 초록 */
+.as-delta .dn, .as-mix .d.dn { color: #b0483a; }
+.as-mix { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--card-line); }
+.as-mix > div + div { padding-left: 10px; border-left: 1px dashed var(--card-line); }
+.as-mix .t { font-size: .7rem; font-weight: 800; color: var(--ink-2); display: flex; align-items: center; gap: 5px; }
+.as-mix .v { font-size: .82rem; font-weight: 800; font-variant-numeric: tabular-nums; margin-top: 2px; }
+.as-mix .d { font-size: .7rem; font-weight: 700; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.as-legend { display: flex; gap: 12px; font-size: .7rem; font-weight: 700; color: var(--ink-2); margin-top: 8px; }
+.as-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.as-mix i, .as-legend i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+.as-mix i.stock, .as-legend i.stock { background: var(--c-stock); }
+.as-mix i.bond, .as-legend i.bond { background: var(--c-bond); }
+.as-mix i.cash, .as-legend i.cash { background: var(--c-cash); box-shadow: inset 0 0 0 1px #cfc9b0; }
 .as-ghost { display: block; width: 100%; text-align: center; margin-top: 8px; }
 /* 스냅샷 모달 */
 .sn-group { display: flex; align-items: center; gap: 7px; font-size: .74rem; font-weight: 800; margin-top: 16px; }

@@ -1379,9 +1379,13 @@ async function renderAssets() {
 
   const curYm = todayStr().slice(0, 7);
   const byYm = {};
+  const byYmCls = {};   // 추이 그래프용 — 달마다 주식·채권·현금
   for (const s of snaps) {
-    if (!holdingOf(s.holding_id)) continue;
+    const h = holdingOf(s.holding_id);
+    if (!h) continue;
     byYm[s.ym] = (byYm[s.ym] ?? 0) + Number(s.value_eur);
+    const g = byYmCls[s.ym] ??= { stock: 0, bond: 0, cash: 0 };
+    g[h.asset_class === "bond" ? "bond" : h.asset_class === "cash" ? "cash" : "stock"] += Number(s.value_eur);
   }
   const ymList = Object.keys(byYm).sort();
   const lastYm = ymList[ymList.length - 1] ?? null;
@@ -1462,11 +1466,13 @@ async function renderAssets() {
     </div>
     ${invested > 0 ? `<p class="an-note">TR 두 계좌 합산(한국계좌 제외), 분모는 주식+채권(현금 제외) · 80/20 (v4) · 범위 밖이면 신규 적립 비중부터 조정, 매도는 6개월 뒤에만 검토 (v4 9쪽)</p>` : ""}
 
-    <p class="an-sec">평가액 추이</p>
-    <p class="ct-label" id="as-label">&nbsp;</p>
-    <div class="sheet" style="padding:12px 14px" id="as-chart">
-      ${ymList.length ? "" : `<p class="empty">기록이 없습니다</p>`}
+    <p class="an-sec as-th"><span>평가액 추이</span>${ymList.length ? `<span class="as-seg"><button type="button" data-mode="total">합계</button><button type="button" data-mode="mix">구성</button></span>` : ""}</p>
+    ${ymList.length ? `<p class="ct-label" id="as-label">&nbsp;</p><p class="as-delta" id="as-delta">&nbsp;</p>` : ""}
+    <div class="sheet" style="padding:12px 14px">
+      <div id="as-chart">${ymList.length ? "" : `<p class="empty">기록이 없습니다</p>`}</div>
+      <div id="as-under"></div>
     </div>
+    ${ymList.length ? `<p class="an-note" id="as-chart-note"></p>` : ""}
 
     <div class="section-head" style="margin-top:22px"><h2 style="margin:0">TR 이자 · 올해 ${fmtNum(yearSum)} €</h2><button type="button" class="btn-ghost" id="as-int-new">+ 기입</button></div>
     <div class="sheet">${intRows || `<p class="empty">기록 없음</p>`}</div>
@@ -1477,7 +1483,15 @@ async function renderAssets() {
     <div class="sheet">${holdRows || `<p class="empty">종목을 먼저 등록하세요</p>`}</div>
     <p class="an-note">펜 색 점 = 계좌 소유자 · 매도한 종목은 삭제 대신 보관 (스냅샷 이력 유지)</p>`;
 
-  if (ymList.length) drawAssetChart(ymList, byYm);
+  if (ymList.length) {
+    const setMode = (m) => {
+      assetTrendMode = m;
+      body.querySelectorAll(".as-seg button").forEach((b) => b.classList.toggle("on", b.dataset.mode === m));
+      drawAssetChart(ymList, byYmCls);
+    };
+    body.querySelectorAll(".as-seg button").forEach((b) => b.onclick = () => setMode(b.dataset.mode));
+    setMode(assetTrendMode);
+  }
   $("as-snap-new").onclick = () => openSnapshotForm(curYm);
   $("as-int-new").onclick = () => openInterestForm(null);
   const intAll = $("as-int-all");
@@ -1489,42 +1503,102 @@ async function renderAssets() {
     b.onclick = () => openHoldingForm(holdings.find((h) => h.id === b.dataset.hold)));
 }
 
-function drawAssetChart(ymList, byYm) {
-  const vals = ymList.map((k) => byYm[k]);
-  const W = 340, H = 150, L = 8, R = 8, T = 18, B = 20;
+// 평가액 추이 — 합계(세로축 기록 범위) / 구성(0부터 쌓은 막대), 목업 .grill/pairfolio-asset-trend-mockup.html
+let assetTrendMode = "total";
+const AS_CLS = [["stock", "주식", "var(--c-stock)"], ["bond", "채권", "var(--c-bond)"], ["cash", "현금", "var(--c-cash)"]];
+function drawAssetChart(ymList, byYmCls) {
+  const rows = ymList.map((k) => byYmCls[k]);
+  const tot = (r) => r.stock + r.bond + r.cash;
+  const vals = rows.map(tot);
   const n = vals.length;
-  const max = Math.max(...vals, 1);
-  const x = (i) => (n === 1 ? W / 2 : L + (i * (W - L - R)) / (n - 1));
-  const y = (v) => T + (1 - v / max) * (H - T - B);
-  const line = vals.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(" ");
-  const step = n === 1 ? W : (W - L - R) / (n - 1);
-  const dots = n <= 40
-    ? vals.map((v, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="2.6" fill="var(--ink)"/>`).join("") : "";
-  const hits = vals.map((v, i) =>
-    `<rect data-i="${i}" x="${(x(i) - step / 2).toFixed(1)}" y="0" width="${step.toFixed(1)}" height="${H}" fill="transparent"/>`).join("");
+  const mix = assetTrendMode === "mix";
+  const sgn = (d) => (d >= 0 ? "+" : "−") + fmtShort(Math.abs(d));
+  const W = 340, H = 160, R = 8, T = 16, B = 20;
+
+  // 세로축: 합계는 기록 범위에 맞춤(1·2·5 단위, 카테고리 추이와 같은 규칙), 구성·점 1개는 0부터
+  const max = Math.max(...vals, 1), min = Math.min(...vals);
+  let lo = 0, hi;
+  if (!mix && n > 1 && max > min) {
+    const rough = (max - min) / 3;
+    const mag = 10 ** Math.floor(Math.log10(rough));
+    const unit = [1, 2, 5, 10].map((m) => m * mag).find((s) => s >= rough);
+    lo = Math.floor(min / unit) * unit; hi = Math.ceil(max / unit) * unit;
+  } else {
+    const unit = 10 ** Math.floor(Math.log10(max)) / 5;
+    hi = Math.ceil(max / unit) * unit;
+  }
+  const L = 10 + `${fmtShort(hi)} €`.length * 5.4;   // 눈금 글자 폭만큼
+  const slot = (W - L - R) / n;
+  const x = mix || n === 1
+    ? (i) => L + slot * (i + 0.5)
+    : (i) => L + 10 + (i * (W - L - R - 16)) / (n - 1);
+  const y = (v) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+
+  const yTicks = [lo, hi].map((t) => `
+    <line x1="${L}" x2="${W - R}" y1="${y(t).toFixed(1)}" y2="${y(t).toFixed(1)}" stroke="var(--card-line)"/>
+    <text x="${L - 5}" y="${(y(t) + 3.5).toFixed(1)}" text-anchor="end" font-size="9.5" fill="var(--ink-2)">${fmtShort(t)} €</text>`).join("");
   const ticks = ymList.map((k, i) => {
     const mo = Number(k.slice(5));
-    const show = n <= 8 || mo === 1 || i === 0;
-    if (!show) return "";
+    if (!(n <= 8 || mo === 1 || i === 0)) return "";
     const txt = mo === 1 || i === 0 ? `'${k.slice(2, 4)}.${mo}` : `${mo}월`;
-    const anchor = i === 0 ? "start" : i === n - 1 ? "end" : "middle";
-    return `<text x="${x(i).toFixed(1)}" y="${H - 5}" text-anchor="${anchor}" font-size="9" fill="var(--ink-2)">${txt}</text>`;
+    return `<text x="${x(i).toFixed(1)}" y="${H - 5}" text-anchor="middle" font-size="9" fill="var(--ink-2)">${txt}</text>`;
   }).join("");
+  const hitW = mix || n === 1 ? slot : (W - L - R) / n;
+  const hits = vals.map((v, i) =>
+    `<rect data-i="${i}" x="${(x(i) - hitW / 2).toFixed(1)}" y="0" width="${hitW.toFixed(1)}" height="${H}" fill="transparent"/>`).join("");
+
+  let marks;
+  if (mix) {
+    const bw = Math.min(34, slot * 0.52);
+    marks = rows.map((r, i) => {
+      let acc = 0;
+      const segs = AS_CLS.map(([k, , c]) => {
+        const y1 = y(acc + r[k]), y0 = y(acc); acc += r[k];
+        return `<rect x="${(x(i) - bw / 2).toFixed(1)}" y="${y1.toFixed(1)}" width="${bw.toFixed(1)}" height="${(y0 - y1).toFixed(1)}" fill="${c}"${k === "cash" ? ' stroke="#cfc9b0" stroke-width=".8"' : ""}/>`;
+      }).join("");
+      // 막대 위 % = 총액 중 투자분(주식+채권)
+      const pct = tot(r) > 0 ? Math.round(((r.stock + r.bond) / tot(r)) * 100) : 0;
+      const lab = n <= 12 ? `<text x="${x(i).toFixed(1)}" y="${(y(r.stock + r.bond) - 4).toFixed(1)}" text-anchor="middle" font-size="9" font-weight="800" fill="var(--ink)" paint-order="stroke" stroke="var(--c-cash)" stroke-width="3" pointer-events="none">${pct}%</text>` : "";
+      return segs + lab;
+    }).join("") + `<rect id="as-sel" fill="none" stroke="var(--ink)" stroke-width="1.6" rx="2" visibility="hidden"/>`;
+  } else {
+    const line = vals.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(" ");
+    const dots = n <= 40
+      ? vals.map((v, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="2.6" fill="var(--ink)"/>`).join("") : "";
+    marks = `<path d="${line}" fill="none" stroke="var(--ink)" stroke-width="1.8" stroke-linejoin="round"/>${dots}
+      <circle id="as-sel" r="4.2" fill="var(--card)" stroke="var(--ink)" stroke-width="2" visibility="hidden"/>`;
+  }
   $("as-chart").innerHTML = `
-    <svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
-      <line x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}" stroke="var(--card-line)"/>
-      <path d="${line} L${x(n - 1).toFixed(1)} ${H - B} L${x(0).toFixed(1)} ${H - B} Z" fill="rgba(38,38,32,.07)"/>
-      <path d="${line}" fill="none" stroke="var(--ink)" stroke-width="1.8" stroke-linejoin="round"/>
-      ${dots}
-      <circle id="as-dot" r="4.2" fill="var(--paper)" stroke="var(--ink)" stroke-width="2" visibility="hidden"/>
-      ${hits}${ticks}
-    </svg>`;
-  const dot = $("as-dot");
+    <svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${yTicks}${marks}${ticks}${hits}</svg>`;
+  $("as-chart-note").textContent = mix
+    ? "막대는 0부터 쌓음 · 막대 위 % = 투자분(주식+채권) 비율"
+    : `세로축은 기록 범위에 맞춤${lo > 0 ? " (0부터 아님)" : ""} · 점을 누르면 그 달`;
+
+  const sel = $("as-sel");
   const select = (i) => {
-    dot.setAttribute("visibility", "visible");
-    dot.setAttribute("cx", x(i).toFixed(1));
-    dot.setAttribute("cy", y(vals[i]).toFixed(1));
+    const r = rows[i], p = rows[i - 1];
+    sel.setAttribute("visibility", "visible");
+    if (mix) {
+      const bw = Math.min(34, slot * 0.52);
+      sel.setAttribute("x", (x(i) - bw / 2 - 2.5).toFixed(1));
+      sel.setAttribute("y", (y(vals[i]) - 2.5).toFixed(1));
+      sel.setAttribute("width", (bw + 5).toFixed(1));
+      sel.setAttribute("height", (y(0) - y(vals[i]) + 2.5).toFixed(1));
+    } else {
+      sel.setAttribute("cx", x(i).toFixed(1));
+      sel.setAttribute("cy", y(vals[i]).toFixed(1));
+    }
     $("as-label").textContent = `${ymList[i].slice(0, 4)}년 ${Number(ymList[i].slice(5))}월 · ${fmtEur(vals[i])}`;
+    const d = p ? vals[i] - tot(p) : 0;
+    $("as-delta").innerHTML = p
+      ? `${ymList[i - 1] === ymAdd(ymList[i], -1) ? "지난달" : "앞 기록"}보다 <b class="${d >= 0 ? "up" : "dn"}">${sgn(d)} €</b> · 투자분(주식+채권) ${fmtShort(r.stock + r.bond)} €`
+      : `첫 기록 · 투자분(주식+채권) ${fmtShort(r.stock + r.bond)} €`;
+    $("as-under").innerHTML = mix
+      ? `<div class="as-legend">${AS_CLS.map(([k, ko]) => `<span><i class="${k}"></i>${ko}</span>`).join("")}</div>`
+      : `<div class="as-mix">${AS_CLS.map(([k, ko]) => {
+          const dd = p ? r[k] - p[k] : null;
+          return `<div><p class="t"><i class="${k}"></i>${ko}</p><p class="v">${fmtShort(r[k])}</p><p class="d ${dd == null ? "" : dd >= 0 ? "up" : "dn"}">${dd == null ? "—" : sgn(dd)}</p></div>`;
+        }).join("")}</div>`;
   };
   $("as-chart").querySelectorAll("rect[data-i]").forEach((rc) =>
     rc.onclick = () => select(Number(rc.dataset.i)));
