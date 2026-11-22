@@ -2247,4 +2247,27 @@ if ("serviceWorker" in navigator && location.protocol === "https:") {
   navigator.serviceWorker.register("sw.js").catch(() => {});
 }
 
-boot();
+// ─────────────────────────────────────────── 시작 화면 (목업 .grill/pairfolio-splash-mockup.html C안, 2026-11-22)
+// 덮개. 워드마크 0 → 형광펜 300 → 규문 680 · 민경 800. 1.2초가 지나고 앱(로그인 확인)이 준비되면 걷힘, 늦어도 3초. 누르면 바로 끝
+async function splash(ready) {
+  const sp = $("splash"); if (!sp) return;
+  let done = false;
+  const out = () => { if (done) return; done = true; sp.classList.add("out"); setTimeout(() => sp.remove(), 260); };
+  sp.addEventListener("click", out);
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) { sp.remove(); return; }
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const settled = ready.catch(() => {});
+  // 글씨체가 0.5초 안에 안 오면 움직임 없이 앱 준비만 기다림
+  const fonts = await Promise.race([document.fonts.load('700 46px "Nanum Myeongjo"', "Pairfolio").then(() => true, () => false), wait(500).then(() => false)]);
+  if (!fonts) { await Promise.race([settled, wait(2500)]); return out(); }
+  const at = (ms, fn) => setTimeout(() => { if (!done) fn(); }, ms);
+  const q = (s) => sp.querySelector(s);
+  at(0, () => q(".s-word").classList.add("in"));
+  at(300, () => q(".s-hl").classList.add("in"));
+  at(680, () => q(".s-pens .km").classList.add("in"));
+  at(800, () => q(".s-pens .mk").classList.add("in"));
+  await Promise.race([Promise.all([settled, wait(1200)]), wait(3000)]);
+  out();
+}
+
+splash(boot());

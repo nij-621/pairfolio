@@ -517,3 +517,29 @@ button.an-tile { width: 100%; font: inherit; color: inherit; cursor: pointer; }
   button, .cat-grid button, .seg button { transition: none; }
   button:active { transform: none; }
 }
+
+/* ── 시작 화면 (앱을 새로 켤 때 한 번, 목업 .grill/pairfolio-splash-mockup.html C안, 2026-11-22) ── */
+#splash {
+  position: fixed; inset: 0; z-index: 100; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background:
+    repeating-linear-gradient(to bottom, transparent 0 27px, var(--grid) 27px 28px),
+    repeating-linear-gradient(to right, transparent 0 27px, var(--grid) 27px 28px),
+    var(--paper);
+  transition: opacity 260ms ease, transform 260ms var(--ease-out);
+  animation: s-safety 0s 3.5s forwards; /* JS가 죽어도 3.5초면 걷힘 */
+}
+@keyframes s-safety { to { opacity: 0; visibility: hidden; pointer-events: none; } }
+#splash.out { opacity: 0; transform: scale(1.03); pointer-events: none; }
+#splash .s-word { font-size: 46px; opacity: 0; transform: translateY(8px); transition: opacity 220ms ease, transform 380ms var(--ease-out); }
+#splash .s-hl { position: relative; isolation: isolate; margin-top: 12px; padding: 2px 6px; font-weight: 700; opacity: 0; transition: opacity 220ms ease; }
+#splash .s-word.in + .s-hl { opacity: 1; } /* 글자는 워드마크와 같이, 형광펜은 300ms 뒤 */
+#splash .s-hl i { position: absolute; inset: 4px 0 0 0; z-index: -1; border-radius: 3px; background: var(--hl); opacity: .85; transform: scaleX(0); transform-origin: left; }
+#splash .s-pens { display: flex; gap: 14px; margin-top: 18px; font-size: .8rem; font-weight: 800; }
+#splash .s-pens span { display: flex; align-items: center; gap: 6px; opacity: 0; transform: translateY(4px); transition: opacity 200ms ease, transform 300ms var(--ease-out); }
+#splash .s-pens .km { color: var(--km); }
+#splash .s-pens .mk { color: var(--mk); }
+#splash .s-pens i { width: 9px; height: 9px; border-radius: 50%; background: currentColor; }
+#splash .s-word.in, #splash .s-pens span.in { opacity: 1; transform: none; }
+#splash .s-hl.in i { transform: scaleX(1); transition: transform 320ms cubic-bezier(.4, 0, .2, 1); }
+@media (prefers-reduced-motion: reduce) { #splash { display: none; } }
